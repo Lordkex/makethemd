@@ -90,12 +90,15 @@ class AudioConverter(DocumentConverter):
 
         # Transcribe
         if audio_format:
-            try:
-                transcript = transcribe_audio(file_stream, audio_format=audio_format)
-                if transcript:
-                    md_content += "\n\n### Audio Transcript:\n" + transcript
-            except MissingDependencyException:
-                pass
+            transcript = transcribe_audio(
+                file_stream,
+                audio_format=audio_format,
+                language=kwargs.get("whisper_language"),
+                model_size=kwargs.get("whisper_model", "base"),
+                progress_fn=kwargs.get("whisper_progress_fn"),
+            )
+            if transcript:
+                md_content += "\n\n### Audio Transcript:\n" + transcript
 
         # Return the result
         return DocumentConverterResult(markdown=md_content.strip())

@@ -166,3 +166,9 @@ cython_debug/
 src/.DS_Store
 .DS_Store
 .cursorrules
+
+# Mappa struktúra igen, tartalom nem
+output/*
+!output/.gitkeep
+sources/*
+!sources/.gitkeep
