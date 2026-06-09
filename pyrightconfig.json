@@ -1,0 +1,7 @@
+{
+  "pythonPath": "C:/Users/leven/AppData/Local/Python/pythoncore-3.14-64/python.exe",
+  "extraPaths": [
+    "packages/markitdown/src"
+  ],
+  "reportMissingImports": "warning"
+}

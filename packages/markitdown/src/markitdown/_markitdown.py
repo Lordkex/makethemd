@@ -25,6 +25,10 @@ from .converters import (
     RssConverter,
     WikipediaConverter,
     YouTubeConverter,
+    InstagramConverter,
+    TikTokConverter,
+    FacebookConverter,
+    LinkedInConverter,
     IpynbConverter,
     BingSerpConverter,
     PdfConverter,
@@ -36,6 +40,7 @@ from .converters import (
     AudioConverter,
     OutlookMsgConverter,
     ZipConverter,
+    EbookConverter,
     EpubConverter,
     DocumentIntelligenceConverter,
     ContentUnderstandingConverter,
@@ -112,7 +117,11 @@ class MarkItDown:
             # e.g., https://blog.cloudflare.com/markdown-for-agents/
             self._requests_session.headers.update(
                 {
-                    "Accept": "text/markdown, text/html;q=0.9, text/plain;q=0.8, */*;q=0.1"
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Referer": "https://www.google.com/",
+                    "Upgrade-Insecure-Requests": "1",
                 }
             )
         else:
@@ -191,6 +200,10 @@ class MarkItDown:
             self.register_converter(RssConverter())
             self.register_converter(WikipediaConverter())
             self.register_converter(YouTubeConverter())
+            self.register_converter(InstagramConverter())
+            self.register_converter(TikTokConverter())
+            self.register_converter(FacebookConverter())
+            self.register_converter(LinkedInConverter())
             self.register_converter(BingSerpConverter())
             self.register_converter(DocxConverter())
             self.register_converter(XlsxConverter())
@@ -201,6 +214,7 @@ class MarkItDown:
             self.register_converter(IpynbConverter())
             self.register_converter(PdfConverter())
             self.register_converter(OutlookMsgConverter())
+            self.register_converter(EbookConverter())
             self.register_converter(EpubConverter())
             self.register_converter(CsvConverter())
 
@@ -472,7 +486,16 @@ class MarkItDown:
             )
         # HTTP/HTTPS URIs
         elif uri.startswith("http:") or uri.startswith("https:"):
-            response = self._requests_session.get(uri, stream=True)
+            request_headers = None
+            if "facebook.com" in uri or "fb.watch" in uri:
+                request_headers = {
+                    "Referer": "https://www.facebook.com/",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "same-origin",
+                    "Sec-Fetch-User": "?1",
+                }
+            response = self._requests_session.get(uri, stream=True, headers=request_headers)
             response.raise_for_status()
             return self.convert_response(
                 response,

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Makethemd – TODO</title>
+<style>
+  :root {
+    --bg:      #2c2525;
+    --bg-dark: #211c1c;
+    --border:  #403838;
+    --fg:      #fce2be;
+    --dim:     #a89080;
+    --green:   #a8c373;
+    --red:     #f26d78;
+    --yellow:  #e8b057;
+    --cyan:    #7fd8b4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    padding: 40px;
+    max-width: 780px;
+    margin: 0 auto;
+  }
+
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  h2 { font-size: 13px; color: var(--dim); font-weight: 400; margin-bottom: 32px; }
+
+  section { margin-bottom: 32px; }
+
+  h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+  }
+
+  label {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border: 1px solid transparent;
+  }
+
+  label:hover { background: var(--bg-dark); border-color: var(--border); }
+
+  label.done .text  { text-decoration: line-through; color: var(--dim); }
+  label.done .badge { opacity: 0.4; }
+
+  input[type="checkbox"] { display: none; }
+
+  .box {
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  label.done .box {
+    background: var(--green);
+    border-color: var(--green);
+  }
+
+  .check { display: none; color: var(--bg-dark); font-size: 12px; font-weight: 700; }
+  label.done .check { display: block; }
+
+  .text { flex: 1; line-height: 1.5; }
+
+  .badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    border: 1px solid;
+    white-space: nowrap;
+    align-self: flex-start;
+    margin-top: 2px;
+  }
+
+  .badge.done    { color: var(--green);  border-color: var(--green); }
+  .badge.partial { color: var(--yellow); border-color: var(--yellow); }
+  .badge.pending { color: var(--dim);    border-color: var(--border); }
+  .badge.new     { color: var(--cyan);   border-color: var(--cyan); }
+
+  .note {
+    font-size: 11px;
+    color: var(--dim);
+    margin-top: 3px;
+    font-family: 'Consolas', monospace;
+  }
+
+  .progress-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--green);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+
+  #progress-text {
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 6px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Makethemd – TODO</h1>
+<h2>Formátum- és funkciófejlesztési lista</h2>
+
+<p id="progress-text"></p>
+<div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+
+<section>
+  <h3>Alkalmazás funkciók</h3>
+
+  <label id="t-gui">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      GUI (Flet) – fájlválasztó, YouTube URL, napló, másolás
+      <div class="note">app.py – Monokai Ristretto téma</div>
+    </span>
+    <span class="badge done">kész</span>
+  </label>
+
+  <label id="t-whisper">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      Whisper audio átírás – GPU/CPU auto detektálás, nyelv- és modellválasztó
+      <div class="note">_transcribe_audio.py – openai-whisper + torch cu128</div>
+    </span>
+    <span class="badge done">kész</span>
+  </label>
+
+  <label id="t-eta">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      Becsült idő megjelenítése audio fájloknál
+      <div class="note">app.py – pydub duration + GPU/CPU sebességbecslés</div>
+    </span>
+    <span class="badge done">kész</span>
+  </label>
+
+  <label id="t-spinner">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      Forgó animáció konvertálás közben
+      <div class="note">app.py – ProgressRing a gomb mellett</div>
+    </span>
+    <span class="badge done">kész</span>
+  </label>
+</section>
+
+<section>
+  <h3>Szöveg / dokumentum formátumok</h3>
+
+  <label id="t-txt">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      <code>txt</code> – plain text converter
+      <div class="note">Tesztelni kell – valószínűleg alapból működik</div>
+    </span>
+    <span class="badge partial">tesztelni</span>
+  </label>
+
+  <label id="t-docx">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      <code>docx</code> – mammoth alapú konverter
+    </span>
+    <span class="badge done">kész</span>
+  </label>
+
+  <label id="t-doc">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      <code>doc</code> – LibreOffice headless vagy antiword
+      <div class="note">winget install LibreOffice → soffice --headless --convert-to docx</div>
+    </span>
+    <span class="badge pending">fejleszteni</span>
+  </label>
+
+  <label id="t-epub">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      <code>epub</code> – beépített konverter
+    </span>
+    <span class="badge done">kész</span>
+  </label>
+
+  <label id="t-azw3">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      <code>azw3 / mobi / fb2</code> – Calibre ebook-convert → EPUB/HTML → Markdown
+      <div class="note">winget install Calibre → calibredb / ebook-convert</div>
+    </span>
+    <span class="badge pending">fejleszteni</span>
+  </label>
+
+  <label id="t-djvu">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      <code>djvu</code> – djvutxt text layer + OCR fallback (pytesseract)
+      <div class="note">djvulibre csomag szükséges</div>
+    </span>
+    <span class="badge pending">fejleszteni</span>
+  </label>
+</section>
+
+<section>
+  <h3>Archívumok</h3>
+
+  <label id="t-zip">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      <code>zip</code> – beépített konverter
+    </span>
+    <span class="badge done">kész</span>
+  </label>
+
+  <label id="t-rar">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      <code>rar</code> – rarfile Python könyvtár vagy 7-Zip backend
+      <div class="note">pip install rarfile + winrar/7zip telepítve kell legyen</div>
+    </span>
+    <span class="badge pending">fejleszteni</span>
+  </label>
+
+  <label id="t-cbr">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      <code>cbr</code> – RAR comic archive: képek kinyerése + OCR / image caption
+      <div class="note">rarfile + pytesseract vagy LLM image captioning</div>
+    </span>
+    <span class="badge pending">fejleszteni</span>
+  </label>
+</section>
+
+<section>
+  <h3>URL / videó platformok</h3>
+
+  <label id="t-yt">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      YouTube URL – youtube-transcript-api
+    </span>
+    <span class="badge done">kész</span>
+  </label>
+
+  <label id="t-tiktok">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      TikTok URL – yt-dlp letöltés + audio transcription (Whisper) + metadata
+      <div class="note">pip install yt-dlp → audio stream → Whisper átírás</div>
+    </span>
+    <span class="badge new">új</span>
+  </label>
+
+  <label id="t-instagram">
+    <input type="checkbox" onchange="toggle(this)">
+    <span class="box"><span class="check">✓</span></span>
+    <span class="text">
+      Instagram / Facebook / LinkedIn videó URL – yt-dlp alapú konverter
+      <div class="note">Közös yt-dlp konverter: URL detektálás → letöltés → Whisper</div>
+    </span>
+    <span class="badge new">új</span>
+  </label>
+</section>
+
+<script>
+  const STORAGE_KEY = 'makethemd-todos';
+
+  function loadState() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
+    catch { return {}; }
+  }
+
+  function saveState(state) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function toggle(checkbox) {
+    const label = checkbox.closest('label');
+    label.classList.toggle('done', checkbox.checked);
+    const state = loadState();
+    state[label.id] = checkbox.checked;
+    saveState(state);
+    updateProgress();
+  }
+
+  function updateProgress() {
+    const labels = document.querySelectorAll('label[id]');
+    const done = [...labels].filter(l => l.classList.contains('done')).length;
+    const pct = Math.round((done / labels.length) * 100);
+    document.getElementById('progress-fill').style.width = pct + '%';
+    document.getElementById('progress-text').textContent =
+      `${done} / ${labels.length} kész  (${pct}%)`;
+  }
+
+  // Restore state on load
+  const state = loadState();
+  document.querySelectorAll('label[id]').forEach(label => {
+    if (state[label.id]) {
+      label.classList.add('done');
+      label.querySelector('input[type="checkbox"]').checked = true;
+    }
+  });
+
+  updateProgress();
+</script>
+</body>
+</html>

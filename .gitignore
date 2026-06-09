@@ -38,6 +38,9 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Windows installer packages
+*.msi
+
 # Unit test / coverage reports
 htmlcov/
 .tox/
@@ -166,3 +169,9 @@ cython_debug/
 src/.DS_Store
 .DS_Store
 .cursorrules
+
+# Mappa struktúra igen, tartalom nem
+output/*
+!output/.gitkeep
+sources/*
+!sources/.gitkeep

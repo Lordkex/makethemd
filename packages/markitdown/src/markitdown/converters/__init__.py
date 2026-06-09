@@ -7,6 +7,10 @@ from ._html_converter import HtmlConverter
 from ._rss_converter import RssConverter
 from ._wikipedia_converter import WikipediaConverter
 from ._youtube_converter import YouTubeConverter
+from ._instagram_converter import InstagramConverter
+from ._tiktok_converter import TikTokConverter
+from ._facebook_converter import FacebookConverter
+from ._linkedin_converter import LinkedInConverter
 from ._ipynb_converter import IpynbConverter
 from ._bing_serp_converter import BingSerpConverter
 from ._pdf_converter import PdfConverter
@@ -25,6 +29,7 @@ from ._cu_converter import (
     ContentUnderstandingConverter,
     ContentUnderstandingFileType,
 )
+from ._ebook_converter import EbookConverter
 from ._epub_converter import EpubConverter
 from ._csv_converter import CsvConverter
 
@@ -34,6 +39,10 @@ __all__ = [
     "RssConverter",
     "WikipediaConverter",
     "YouTubeConverter",
+    "InstagramConverter",
+    "TikTokConverter",
+    "FacebookConverter",
+    "LinkedInConverter",
     "IpynbConverter",
     "BingSerpConverter",
     "PdfConverter",
@@ -45,6 +54,7 @@ __all__ = [
     "AudioConverter",
     "OutlookMsgConverter",
     "ZipConverter",
+    "EbookConverter",
     "DocumentIntelligenceConverter",
     "DocumentIntelligenceFileType",
     "ContentUnderstandingConverter",

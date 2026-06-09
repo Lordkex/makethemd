@@ -1,0 +1,54 @@
+# Markitdown core
+beautifulsoup4==4.15.0
+requests==2.34.2
+markdownify==1.2.2
+magika==0.6.2
+charset-normalizer==3.4.7
+# TikTok/Facebook URL konverterekhez nincs külön csomag, a beépített `requests` és `beautifulsoup4` elegendő.
+defusedxml==0.7.1
+
+# Dokumentumok
+mammoth==1.11.0
+python-pptx==1.0.2
+lxml==6.1.1
+
+# Táblázatok
+pandas==3.0.3
+openpyxl==3.1.5
+xlrd==2.0.2
+
+# PDF
+pdfminer.six==20251230
+pdfplumber==0.11.9
+
+# Outlook
+olefile==0.47
+
+# Audio – ffmpeg szükséges (winget install ffmpeg)
+pydub==0.25.1
+
+# Ebook konverzió – Calibre `ebook-convert` szükséges
+# Az `ebook-convert` nem pip csomag, mivel a Calibre telepítésével jön.
+# Frissítés vagy újratelepítés után ellenőrizd, hogy Calibre telepítve van és az
+# `ebook-convert --version` sikeresen lefut.
+# DjVu OCR fallbackhoz opcionálisan telepíthető:
+#   pip install pytesseract Pillow
+
+# Audio átírás – Whisper (Google Speech helyett)
+# NVIDIA GPU esetén (CUDA 12.8):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+# CPU esetén:
+#   pip install torch
+openai-whisper
+
+# YouTube
+youtube-transcript-api==1.2.4
+
+# GUI
+flet==0.85.3
+
+# Azure (opcionális – csak ha Azure szolgáltatásokat használsz)
+azure-ai-documentintelligence==1.0.2
+azure-ai-contentunderstanding==1.2.0b1
+azure-core==1.41.0
+azure-identity==1.25.3
