@@ -6,6 +6,9 @@
 Python 3.10–3.14 szükséges.  
 Letöltés: https://www.python.org/downloads/
 
+> A fő alkalmazás használhatja a globális Python 3.14-et. A lokális PaddleOCR
+> külön Python 3.13-as `.venv-ocr` worker környezetben fut.
+
 ### ffmpeg (audio/video konverzióhoz)
 ```bash
 winget install ffmpeg
@@ -125,7 +128,77 @@ Az első futáskor a modell letöltődik (~150 MB – 3 GB), ezután cache-elve 
 
 ---
 
-## 7. Saját konverter hozzáadása
+## 7. Lokális kép-OCR – PaddleOCR
+
+Az alkalmazás a dokumentumot MarkItDown-nal alakítja Markdownná. Az opcionális
+OCR-funkció a beágyazott képeket helyben, PaddleOCR-rel dolgozza fel, majd a
+felismert szöveget a Markdown végéhez fűzi. Nem igényel API-kulcsot és nem
+használ fizetős szolgáltatást.
+
+### Külön OCR-környezet telepítése
+
+A PaddlePaddle jelenleg nem ad ki Python 3.14-es Windows-csomagot. A fő app
+ettől még maradhat a globális Python 3.14-en: az OCR egy külön Python 3.13-as
+subprocessben fut, és JSON-fájlon keresztül adja vissza az eredményt.
+
+A projekt gyökerében hozd létre az OCR-környezetet:
+
+```powershell
+uv venv --python 3.13 .venv-ocr
+uv pip install --python .venv-ocr\Scripts\python.exe -r requirements-ocr.txt
+```
+
+Az OCR-környezetet nem kell aktiválni. Az app automatikusan a
+`.venv-ocr\Scripts\python.exe` workert indítja, miközben maga továbbra is a
+globális Python 3.14-en fut.
+
+### Használat
+
+1. Indítsd el az appot: `python app.py`.
+2. Válassz ki egy dokumentumot.
+3. Jelöld be az `OCR képekből (lokális PaddleOCR)` opciót.
+4. Indítsd el a konvertálást.
+
+Ha az OCR ki van kapcsolva, csak a megszokott MarkItDown-konverzió fut. Ha be
+van kapcsolva, a kimenet végén ilyen szekció jelenik meg:
+
+```markdown
+## OCR-rel kinyert szöveg képekből
+
+### Kép 1
+
+A képről felismert szöveg...
+```
+
+A DOCX, PPTX és XLSX fájlok beágyazott képei támogatottak. PDF esetén a
+beágyazott képeket a PyMuPDF nyeri ki. Önálló PNG, JPG, TIFF, BMP és WebP
+képfájlok is feldolgozhatók.
+
+### Első futtatás és teszt
+
+Az első OCR-inicializálás letölti a szükséges modelleket, ezért ekkor
+internetkapcsolat kell. A modellek ezután gyorsítótárból, offline is
+használhatók. A modellek a projekt `.ocr-cache` könyvtárába kerülnek; ez és a
+`.venv-ocr` nincs verziókezelés alatt.
+
+```powershell
+python test_ocr.py
+```
+
+### Hibaelhárítás
+
+- Az OCR-környezet nem található: futtasd újra a fenti két `uv` parancsot.
+- `No matching distribution found for paddlepaddle`: ellenőrizd, hogy az
+  `uv venv` parancs valóban Python 3.13-as `.venv-ocr` környezetet hozott létre.
+- Sikertelen modellletöltés: ellenőrizd az internetkapcsolatot, a proxyt és a
+  tűzfalat, majd futtasd újra a tesztet.
+- Nincs felismert szöveg: használj nagyobb, élesebb, kevésbé tömörített képet.
+- Nincs OCR-szekció: a szekció csak akkor jön létre, ha legalább egy képen
+  felismerhető szöveg található.
+
+---
+
+## 8. Saját konverter hozzáadása
 
 Hozz létre egy új fájlt: `packages/markitdown/src/markitdown/converters/_sajat_converter.py`
 

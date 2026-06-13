@@ -1,21 +1,28 @@
+import logging
 import os
+import re
+import subprocess
 import threading
 import time
 import tkinter as tk
 from tkinter import filedialog
 from pathlib import Path
-import importlib
 
-FFMPEG_BIN = (
-    r"C:\Users\leven\AppData\Local\Microsoft\WinGet\Packages"
-    r"\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
-    r"\ffmpeg-8.1.1-full_build\bin"
+local_appdata = os.environ.get("LOCALAPPDATA", "")
+FFMPEG_BIN = str(
+    Path(local_appdata) / "Microsoft" / "WinGet" / "Packages" /
+    "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe" / "ffmpeg-8.1.1-full_build" / "bin"
 )
 if FFMPEG_BIN not in os.environ["PATH"]:
     os.environ["PATH"] = FFMPEG_BIN + os.pathsep + os.environ["PATH"]
 
 import flet as ft
 from markitdown import MarkItDown
+from ocr_utils import append_image_ocr, check_ocr_environment
+
+# Importok után állítjuk be, hogy a pdfminer saját setLevel-jeit felülírjuk
+logging.getLogger("pdfminer").setLevel(logging.ERROR)
+logging.getLogger("pdfminer").propagate = False
 
 OUTPUT = Path("output")
 OUTPUT.mkdir(exist_ok=True)
@@ -44,6 +51,8 @@ FILETYPES = [
     ("Ebook", "*.azw3 *.mobi *.fb2"),
 ]
 
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a"}
+
 
 def open_file_dialog() -> list[Path]:
     result: list[Path] = []
@@ -71,6 +80,28 @@ def main(page: ft.Page):
 
     md = MarkItDown()
     selected_files: list[Path] = []
+
+    border_style = ft.Border(
+        left=ft.BorderSide(1, BORDER),
+        right=ft.BorderSide(1, BORDER),
+        top=ft.BorderSide(1, BORDER),
+        bottom=ft.BorderSide(1, BORDER),
+    )
+
+    btn_style = ft.ButtonStyle(
+        bgcolor=BG_DARK,
+        color=FG,
+        side=ft.BorderSide(1, BORDER),
+        shape=ft.RoundedRectangleBorder(radius=6),
+        padding=ft.Padding(left=16, right=16, top=10, bottom=10),
+    )
+
+    convert_btn_style = ft.ButtonStyle(
+        bgcolor=BORDER,
+        color=FG,
+        shape=ft.RoundedRectangleBorder(radius=6),
+        padding=ft.Padding(left=32, right=32, top=14, bottom=14),
+    )
 
     status_log = ft.ListView(expand=True, spacing=4, auto_scroll=True)
 
@@ -150,7 +181,13 @@ def main(page: ft.Page):
         cursor_color=FG,
     )
 
-    AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".mp4"}
+    ocr_checkbox = ft.Checkbox(
+        label="OCR képekből (lokális PaddleOCR)",
+        value=False,
+        active_color=GREEN,
+        check_color=BG_DARK,
+        label_style=ft.TextStyle(color=FG),
+    )
 
     tags_row = ft.Row(wrap=True, spacing=6, run_spacing=6)
 
@@ -195,12 +232,7 @@ def main(page: ft.Page):
                 tight=True,
             ),
             bgcolor=BG_DARK,
-            border=ft.Border(
-                left=ft.BorderSide(1, BORDER),
-                right=ft.BorderSide(1, BORDER),
-                top=ft.BorderSide(1, BORDER),
-                bottom=ft.BorderSide(1, BORDER),
-            ),
+            border=border_style,
             border_radius=20,
             padding=ft.Padding(left=10, right=4, top=4, bottom=4),
         )
@@ -235,12 +267,10 @@ def main(page: ft.Page):
         "turbo":  {"cuda": 10,  "cpu": 0.8},
         "large":  {"cuda": 2.4, "cpu": 0.15},
     }
-    AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".mp4"}
 
     def get_audio_info(path: Path, model: str) -> tuple[float | None, float | None]:
         """Returns (audio_duration_s, estimated_processing_s) – ffprobe-val, gyors."""
         try:
-            import subprocess
             r = subprocess.run(
                 ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
                  "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
@@ -263,8 +293,6 @@ def main(page: ft.Page):
         return f"{m}:{sec:02d}"
 
     def sanitize_filename(name: str) -> str:
-        import re
-
         safe = re.sub(r"[^a-zA-Z0-9_.-]", "_", name)
         return safe.strip("_-")[:120] or "output"
 
@@ -306,11 +334,13 @@ def main(page: ft.Page):
         eta_container.visible = True
         resize_window()
 
+    model_dd.on_change = update_eta  # type: ignore[attr-defined]
+
     audio_settings_row.controls.append(ft.IconButton(
         icon=ft.Icons.REFRESH,
         icon_size=16,
         icon_color=FG_DIM,
-        tooltip="ETA újraszámítása (modell váltás után)",
+        tooltip="ETA újraszámítása",
         on_click=update_eta,
     ))
 
@@ -326,6 +356,16 @@ def main(page: ft.Page):
         def run():
             converted = 0
             errors = 0
+            use_ocr = bool(ocr_checkbox.value)
+
+            if use_ocr:
+                try:
+                    check_ocr_environment()
+                except Exception as ex:
+                    spinner.visible = False
+                    log(f"PaddleOCR nem indítható: {ex}", RED)
+                    log("Lásd a SETUP.md PaddleOCR telepítési útmutatóját.", YELLOW)
+                    return
 
             for path in selected_files:
                 out_path = OUTPUT / (path.stem + ".md")
@@ -358,7 +398,18 @@ def main(page: ft.Page):
                         whisper_model=model,
                         whisper_progress_fn=progress_fn,
                     )
-                    out_path.write_text(result.text_content, encoding="utf-8")
+                    markdown = result.text_content
+                    if use_ocr:
+                        markdown, image_count = append_image_ocr(
+                            markdown,
+                            path,
+                            progress=lambda message: log(message, FG_DIM),
+                        )
+                        if image_count:
+                            log(f"  OCR: {image_count} képből került szöveg a kimenetbe.", CYAN)
+                        else:
+                            log("  OCR: nem található kiolvasható szöveget tartalmazó kép.", FG_DIM)
+                    out_path.write_text(markdown, encoding="utf-8")
 
                     if live_ctrl is not None:
                         status_log.controls.remove(live_ctrl)
@@ -451,7 +502,6 @@ def main(page: ft.Page):
     )
 
     def copy_log():
-        import subprocess
         lines = [c.value for c in status_log.controls if isinstance(c, ft.Text)]  # type: ignore[union-attr]
         text = "\n".join(lines)
         subprocess.Popen(["clip"], stdin=subprocess.PIPE).communicate(
@@ -459,28 +509,6 @@ def main(page: ft.Page):
         )
         copy_label.value = "kimásolva vágólapra"
         page.update()
-
-    border_style = ft.Border(
-        left=ft.BorderSide(1, BORDER),
-        right=ft.BorderSide(1, BORDER),
-        top=ft.BorderSide(1, BORDER),
-        bottom=ft.BorderSide(1, BORDER),
-    )
-
-    btn_style = ft.ButtonStyle(
-        bgcolor=BG_DARK,
-        color=FG,
-        side=ft.BorderSide(1, BORDER),
-        shape=ft.RoundedRectangleBorder(radius=6),
-        padding=ft.Padding(left=16, right=16, top=10, bottom=10),
-    )
-
-    convert_btn_style = ft.ButtonStyle(
-        bgcolor=BORDER,
-        color=FG,
-        shape=ft.RoundedRectangleBorder(radius=6),
-        padding=ft.Padding(left=32, right=32, top=14, bottom=14),
-    )
 
     page.add(
         ft.Row([
@@ -516,6 +544,7 @@ def main(page: ft.Page):
         audio_settings_row,
         eta_container,
         ft.Row([url_field]),
+        ocr_checkbox,
 
         ft.Divider(height=8, color=BORDER),
         ft.Row([

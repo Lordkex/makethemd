@@ -130,6 +130,9 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv-ocr/
+.ocr-cache/
+.uv-cache/
 env/
 venv/
 ENV/
