@@ -2,21 +2,30 @@
 
 Asztali (Windows) alkalmazás, amely **bármilyen fájlt vagy linket Markdown (`.md`) szöveggé alakít**.
 A Microsoft [MarkItDown](https://github.com/microsoft/markitdown) könyvtárra épül, egy egyszerű
-grafikus felülettel (Flet) kiegészítve.
+grafikus felülettel ([Flet](https://github.com/flet-dev/flet)) kiegészítve. Az audioátírást
+[Whisper](https://github.com/openai/whisper) és [PyTorch](https://github.com/pytorch/pytorch),
+a helyi kép-OCR-t [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) és
+[PaddlePaddle](https://github.com/PaddlePaddle/Paddle), a videó/link feldolgozást pedig
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) és
+[youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api) segíti.
 
 ## Mit tud
 
 - **Fájlok → Markdown:** PDF, Word (DOCX/DOC), Excel (XLSX/XLS/CSV), PowerPoint (PPTX), HTML, EPUB,
   JSON/XML, Jupyter notebook, Outlook `.msg`, ZIP, képek.
 - **Ebook → Markdown:** AZW3, MOBI, FB2, DjVu (Calibre `ebook-convert` szükséges).
-- **Audio → szöveg:** MP3/WAV/M4A átírása **Whisper**rel (GPU-n vagy CPU-n).
-- **YouTube → szöveg:** a kész felirat/átirat letöltése (gyors, nem Whisper).
+- **Audio → szöveg:** MP3/WAV/M4A átírása **[Whisper](https://github.com/openai/whisper)**rel
+  (GPU-n vagy CPU-n).
+- **YouTube → szöveg:** a kész felirat/átirat letöltése
+  ([youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api), gyors, nem Whisper).
 - **Linklista:** egy `.txt`-ben soronként megadott linkek **kötegelt** feldolgozása. Ami már megvan
   az `output/` mappában, azt kihagyja.
 - **TikTok / Instagram / X / Vimeo:** elsőként a videó **beágyazott feliratát** próbálja leszedni
-  (gyors); ha nincs, letölti a hangot és Whisperrel írja át.
-- **Kép-OCR (opcionális):** a beágyazott képekből helyben, **PaddleOCR**-rel nyer ki szöveget
-  (lásd 5. pont).
+  (gyors); ha nincs, [yt-dlp](https://github.com/yt-dlp/yt-dlp)-vel letölti a hangot és
+  Whisperrel írja át.
+- **Kép-OCR (opcionális):** a beágyazott képekből helyben,
+  **[PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)**-rel nyer ki szöveget
+  (PDF-képekhez [PyMuPDF](https://github.com/pymupdf/PyMuPDF), lásd 5. pont).
 
 Az eredmény mindig az **`output/`** mappába kerül.
 
