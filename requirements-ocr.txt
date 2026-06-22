@@ -1,5 +1,0 @@
-# Külön Python 3.13-as OCR worker környezet
-paddleocr==3.7.0
-paddlepaddle==3.3.1
-Pillow>=10.0.0
-PyMuPDF>=1.24.0

@@ -135,7 +135,7 @@ A PaddlePaddle jelenleg nem ad ki Python 3.14-es Windows-csomagot, ezért az OCR
 
 ```powershell
 uv venv --python 3.13 .venv-ocr
-uv pip install --python .venv-ocr\Scripts\python.exe -r requirements-ocr.txt
+uv pip install --python .venv-ocr\Scripts\python.exe -r requirements.txt
 ```
 
 Az OCR-környezetet nem kell aktiválni — az app automatikusan a `.venv-ocr\Scripts\python.exe`
@@ -161,7 +161,7 @@ működik. A modellek a projekt `.ocr-cache` könyvtárába kerülnek (`.ocr-cac
 verziókezelés alatt). Teszt:
 
 ```powershell
-python test_ocr.py
+python paddleocr_tools\test_ocr.py
 ```
 
 ### Hibaelhárítás

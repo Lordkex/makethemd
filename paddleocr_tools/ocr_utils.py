@@ -7,9 +7,9 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OCR_PYTHON = PROJECT_ROOT / ".venv-ocr" / "Scripts" / "python.exe"
-OCR_WORKER = PROJECT_ROOT / "ocr_worker.py"
+OCR_WORKER = Path(__file__).resolve().with_name("ocr_worker.py")
 OCR_CACHE = PROJECT_ROOT / ".ocr-cache"
 
 

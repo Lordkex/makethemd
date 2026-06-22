@@ -22,7 +22,7 @@ if FFMPEG_BIN not in os.environ["PATH"]:
 
 import flet as ft
 from markitdown import MarkItDown
-from ocr_utils import append_image_ocr, check_ocr_environment
+from paddleocr_tools.ocr_utils import append_image_ocr, check_ocr_environment
 
 # Importok után állítjuk be, hogy a pdfminer saját setLevel-jeit felülírjuk
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
@@ -385,8 +385,9 @@ def main(page: ft.Page):
     else:
         model_options = [
             ft.dropdown.Option("tiny",  "tiny  — nagyon gyors"),
-            ft.dropdown.Option("base",  "base  — gyors (ajánlott)"),
+            ft.dropdown.Option("base",  "base  — gyors"),
             ft.dropdown.Option("small", "small — lassabb, pontosabb"),
+            ft.dropdown.Option("turbo", "turbo — pontosabb, CPU-n lassabb"),
         ]
 
     model_dd = ft.Dropdown(
@@ -416,7 +417,7 @@ def main(page: ft.Page):
     )
 
     ocr_checkbox = ft.Checkbox(
-        label="OCR képekből (lokális PaddleOCR)",
+        label="OCR képekből helyileg",
         value=False,
         active_color=GREEN,
         check_color=BG_DARK,
@@ -472,6 +473,11 @@ def main(page: ft.Page):
     AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".mp4"}
 
     tags_row = ft.Row(wrap=True, spacing=6, run_spacing=6)
+    files_tags_container = ft.Container(
+        content=tags_row,
+        visible=False,
+        padding=ft.Padding(left=0, right=0, top=6, bottom=0),
+    )
 
     audio_settings_row = ft.Row(
         [language_dd, model_dd, device_label],
@@ -523,6 +529,7 @@ def main(page: ft.Page):
         tags_row.controls.clear()
         for f in selected_files:
             tags_row.controls.append(make_tag(f))
+        files_tags_container.visible = bool(selected_files)
         has_audio = any(f.suffix.lower() in AUDIO_EXTENSIONS for f in selected_files)
         has_media_link = any(
             is_media_site(ln.strip())
@@ -898,22 +905,13 @@ def main(page: ft.Page):
                 style=btn_style,
                 on_click=clear_files,
             ),
-        ]),
-        ft.Container(
-            content=tags_row,
-            padding=ft.Padding(left=0, right=0, top=4, bottom=4),
-        ),
-
-        ft.Divider(height=8, color=BORDER),
+            ft.Container(expand=True),
+            ocr_checkbox,
+        ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        files_tags_container,
         audio_settings_row,
         eta_container,
         ft.Row([url_field]),
-        ocr_checkbox,
-
-        ft.Row([
-            ft.Text("Linklista", size=14, weight=ft.FontWeight.W_600, color=FG_DIM),
-            link_count_label,
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ft.Row([
             ft.Button(
                 "Linklista (.txt) betöltése",
@@ -927,7 +925,8 @@ def main(page: ft.Page):
                 style=btn_style,
                 on_click=clear_links,
             ),
-        ]),
+            link_count_label,
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ft.Row([links_field]),
 
         ft.Divider(height=8, color=BORDER),
@@ -943,7 +942,7 @@ def main(page: ft.Page):
 
         ft.Divider(height=8, color=BORDER),
         ft.Row([
-            ft.Text("Napló", size=14, weight=ft.FontWeight.W_600, color=FG_DIM),
+            ft.Text("console", size=14, weight=ft.FontWeight.W_600, color=FG_DIM),
             ft.IconButton(
                 icon=ft.Icons.CONTENT_COPY,
                 icon_size=15,

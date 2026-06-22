@@ -7,7 +7,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from ocr_utils import OCR_CACHE, OCR_PYTHON, OCR_WORKER, check_ocr_environment
+if __package__:
+    from .ocr_utils import OCR_CACHE, OCR_PYTHON, OCR_WORKER, check_ocr_environment
+else:
+    from ocr_utils import OCR_CACHE, OCR_PYTHON, OCR_WORKER, check_ocr_environment
 
 
 def main() -> int:
