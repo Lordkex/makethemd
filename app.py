@@ -76,6 +76,24 @@ def open_file_dialog() -> list[Path]:
     return result
 
 
+def open_folder_dialog() -> Path | None:
+    result: list[Path] = []
+
+    def _pick():
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        path = filedialog.askdirectory(title="Kimeneti mappa kiválasztása")
+        root.destroy()
+        if path:
+            result.append(Path(path))
+
+    t = threading.Thread(target=_pick)
+    t.start()
+    t.join()
+    return result[0] if result else None
+
+
 def open_txt_dialog() -> Path | None:
     result: list[Path] = []
 
@@ -314,6 +332,7 @@ def main(page: ft.Page):
 
     md = MarkItDown()
     selected_files: list[Path] = []
+    current_output: list[Path] = [OUTPUT]
 
     border_style = ft.Border(
         left=ft.BorderSide(1, BORDER),
@@ -493,11 +512,17 @@ def main(page: ft.Page):
         padding=ft.Padding(left=0, right=0, top=4, bottom=0),
     )
 
+    def safe_update():
+        try:
+            page.update()
+        except Exception:
+            pass
+
     def log(msg: str, color=FG):
         status_log.controls.append(
             ft.Text(msg, color=color, size=13, font_family="monospace")
         )
-        page.update()
+        safe_update()
 
     def make_tag(path: Path) -> ft.Container:
         def remove(e, p=path):
@@ -651,6 +676,8 @@ def main(page: ft.Page):
             converted = 0
             errors = 0
             use_ocr = bool(ocr_checkbox.value)
+            out_dir = current_output[0]
+            out_dir.mkdir(parents=True, exist_ok=True)
 
             if use_ocr:
                 try:
@@ -663,7 +690,7 @@ def main(page: ft.Page):
             skipped = 0
 
             for path in selected_files:
-                out_path = OUTPUT / (path.stem + ".md")
+                out_path = out_dir / (path.stem + ".md")
                 is_audio = path.suffix.lower() in AUDIO_EXTENSIONS
                 t0 = None
                 live_ctrl = None
@@ -679,11 +706,19 @@ def main(page: ft.Page):
                         t0 = time.monotonic()
                         live_ctrl = ft.Text("   ⟳  indul...", size=13, color=FG_DIM, font_family="monospace")
                         status_log.controls.append(live_ctrl)
-                        page.update()
+                        safe_update()
 
-                        def _on_progress(msg, ctrl=live_ctrl):
+                        _prog_last = [0.0]
+
+                        def _on_progress(msg, ctrl=live_ctrl, _t=_prog_last):
                             ctrl.value = msg
-                            ctrl.update()  # csak ezt a sort frissíti, nem az egész lapot
+                            now = time.monotonic()
+                            if now - _t[0] >= 0.15:
+                                _t[0] = now
+                                try:
+                                    ctrl.update()
+                                except Exception:
+                                    pass
 
                         progress_fn = _on_progress
 
@@ -727,7 +762,7 @@ def main(page: ft.Page):
                     result = md.convert(url_value)
                     parsed_url = url_value.replace("https://", "").replace("http://", "")
                     out_name = sanitize_filename(parsed_url)
-                    out_path = OUTPUT / f"{out_name}.md"
+                    out_path = out_dir / f"{out_name}.md"
                     out_path.write_text(result.text_content, encoding="utf-8")
                     log(f"✓  URL  →  {out_path.name}", GREEN)
                     converted += 1
@@ -740,10 +775,9 @@ def main(page: ft.Page):
             n_links = len(link_list)
 
             def _already_converted(name: str) -> bool:
-                # kész, ha pontosan ilyen nevű .md van, vagy egy korábbi sorszám-prefixes változat
-                if (OUTPUT / f"{name}.md").exists():
+                if (out_dir / f"{name}.md").exists():
                     return True
-                return any(OUTPUT.glob(f"???_{name}.md"))
+                return any(out_dir.glob(f"???_{name}.md"))
 
             for i, url in enumerate(link_list, 1):
                 short = url if len(url) <= 55 else url[:54] + "…"
@@ -754,10 +788,10 @@ def main(page: ft.Page):
                     skipped += 1
                     continue
 
-                out_path = OUTPUT / f"{basename}.md"
+                out_path = out_dir / f"{basename}.md"
                 live = ft.Text(f"⏳  [{i}/{n_links}]  {short}", size=13, color=FG_DIM, font_family="monospace")
                 status_log.controls.append(live)
-                page.update()
+                safe_update()
 
                 tmpdir = None
                 method = ""
@@ -765,7 +799,10 @@ def main(page: ft.Page):
                     if is_media_site(url):
                         # 1) gyors út: kész felirat (Whisper nélkül)
                         live.value = f"💬  [{i}/{n_links}]  {short}  — felirat keresése..."
-                        live.update()
+                        try:
+                            live.update()
+                        except Exception:
+                            pass
                         out_text = fetch_media_captions(url, lang)
 
                         if out_text:
@@ -774,13 +811,24 @@ def main(page: ft.Page):
                         else:
                             # 2) tartalék: hang letöltése + Whisper-átírás
                             live.value = f"⬇  [{i}/{n_links}]  {short}  — nincs felirat, hang letöltése..."
-                            live.update()
+                            try:
+                                live.update()
+                            except Exception:
+                                pass
                             tmpdir = tempfile.mkdtemp(prefix="mtd_")
                             audio_path = download_media_audio(url, tmpdir)
 
-                            def _on_link_progress(msg, ctrl=live, idx=i):
+                            _lp_last = [0.0]
+
+                            def _on_link_progress(msg, ctrl=live, idx=i, _t=_lp_last):
                                 ctrl.value = f"   [{idx}/{n_links}]  {msg}"
-                                ctrl.update()
+                                now = time.monotonic()
+                                if now - _t[0] >= 0.15:
+                                    _t[0] = now
+                                    try:
+                                        ctrl.update()
+                                    except Exception:
+                                        pass
 
                             result = md.convert(
                                 str(audio_path),
@@ -814,9 +862,18 @@ def main(page: ft.Page):
             else:
                 skip_str = f", {skipped} kihagyva" if skipped else ""
                 log(
-                    f"\nKész: {converted} sikeres, {errors} hiba{skip_str}  →  output/ mappa",
+                    f"\nKész: {converted} sikeres, {errors} hiba{skip_str}  →  {out_dir}",
                     CYAN,
                 )
+                try:
+                    import ctypes
+                    import winsound
+                    winsound.MessageBeep(winsound.MB_ICONASTERISK)
+                    hwnd = ctypes.windll.user32.FindWindowW(None, page.title)
+                    if hwnd:
+                        ctypes.windll.user32.FlashWindow(hwnd, True)
+                except Exception:
+                    pass
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -864,6 +921,23 @@ def main(page: ft.Page):
         page.update()
 
     copy_label = ft.Text("", size=11, color=GREEN)
+
+    output_path_label = ft.Text(
+        str(OUTPUT),
+        size=11,
+        color=FG_DIM,
+        expand=True,
+        no_wrap=True,
+        overflow=ft.TextOverflow.ELLIPSIS,
+    )
+
+    def browse_output(e):
+        folder = open_folder_dialog()
+        if folder:
+            folder.mkdir(parents=True, exist_ok=True)
+            current_output[0] = folder
+            output_path_label.value = str(folder)
+            page.update()
 
     spinner = ft.ProgressRing(
         width=20, height=20,
@@ -930,6 +1004,16 @@ def main(page: ft.Page):
         ft.Row([links_field]),
 
         ft.Divider(height=8, color=BORDER),
+        ft.Row([
+            ft.Icon(ft.Icons.FOLDER_OPEN, size=16, color=FG_DIM),
+            output_path_label,
+            ft.Button(
+                "Kimenet mappa",
+                icon=ft.Icons.DRIVE_FOLDER_UPLOAD,
+                style=btn_style,
+                on_click=browse_output,
+            ),
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ft.Row([
             ft.Button(
                 "Konvertálás",
