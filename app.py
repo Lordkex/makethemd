@@ -136,6 +136,30 @@ def is_media_site(url: str) -> bool:
     return any(site in host for site in YT_DLP_SITES)
 
 
+def is_youtube_url(url: str) -> bool:
+    host = urlparse(url).netloc.lower()
+    return "youtube.com" in host or "youtu.be" in host
+
+
+def ensure_real_transcript(url: str, text: str) -> None:
+    """YouTube-linkeknél ellenőrzi, hogy tényleg készült-e átirat.
+
+    A markitdown, ha nem éri el a feliratot (pl. a YouTube blokkolja az IP-t,
+    vagy a videónak nincs felirata), csendben visszaesik a weboldal szövegére
+    (menü/lábléc), és azt "sikeres" kimenetként adja vissza. Ilyenkor inkább
+    hibát dobunk, hogy ne szülessen félrevezető, üres .md fájl.
+    """
+    if is_youtube_url(url) and "### Transcript" not in text:
+        raise RuntimeError(
+            "nem sikerült feliratot/átiratot lekérni. "
+            "Legvalószínűbb ok: TÚL SOK KÉRÉS a YouTube felirat-API felé, "
+            "ezért a YouTube átmenetileg blokkolta az IP-címedet (IpBlocked). "
+            "Megoldás: válts hálózatot (pl. mobilnetről Wi-Fi-re vagy fordítva), "
+            "vagy várj néhány órát, és ne futtass egyszerre sok linket. "
+            "(Ritkább ok: a videónak egyáltalán nincs felirata.)"
+        )
+
+
 def url_to_basename(url: str) -> str:
     """Stabil, sorszám nélküli alapnevet képez egy URL-ből (kiterjesztés nélkül).
 
@@ -776,6 +800,7 @@ def main(page: ft.Page):
                 else:
                     try:
                         result = md.convert(url_value)
+                        ensure_real_transcript(url_value, result.text_content)
                         resolved_path.write_text(result.text_content, encoding="utf-8")
                         log(f"✓  URL  →  {resolved_path.name}", GREEN)
                         converted += 1
@@ -860,6 +885,7 @@ def main(page: ft.Page):
                             method = " [whisper]"
                     else:
                         out_text = md.convert(url).text_content
+                        ensure_real_transcript(url, out_text)
 
                     out_path.write_text(out_text, encoding="utf-8")
                     status_log.controls.remove(live)
@@ -881,14 +907,22 @@ def main(page: ft.Page):
                 log("Nincs kiválasztott fájl vagy URL.", YELLOW)
             else:
                 skip_str = f", {skipped} kihagyva" if skipped else ""
+                summary_color = RED if errors else CYAN
                 log(
                     f"\nKész: {converted} sikeres, {errors} hiba{skip_str}  →  {out_dir}",
-                    CYAN,
+                    summary_color,
                 )
+                if errors:
+                    log(
+                        f"⚠  {errors} elem nem készült el (lásd a fenti ✗ sorokat) – "
+                        "ezekhez nem jött létre valós átirat.",
+                        RED,
+                    )
                 try:
                     import ctypes
                     import winsound
-                    winsound.MessageBeep(winsound.MB_ICONASTERISK)
+                    beep = winsound.MB_ICONHAND if errors else winsound.MB_ICONASTERISK
+                    winsound.MessageBeep(beep)
                     hwnd = ctypes.windll.user32.FindWindowW(None, page.title)
                     if hwnd:
                         ctypes.windll.user32.FlashWindow(hwnd, True)

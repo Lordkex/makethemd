@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-echo MakeThemd indítása...
+echo Starting MakeThemd...
 
 where py >nul 2>nul
 if not errorlevel 1 (
