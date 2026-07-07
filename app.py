@@ -22,6 +22,7 @@ if FFMPEG_BIN not in os.environ["PATH"]:
 
 import flet as ft
 from markitdown import MarkItDown
+from output_utils import choose_output_path
 from paddleocr_tools.ocr_utils import append_image_ocr, check_ocr_environment
 
 # Importok után állítjuk be, hogy a pdfminer saját setLevel-jeit felülírjuk
@@ -691,6 +692,13 @@ def main(page: ft.Page):
 
             for path in selected_files:
                 out_path = out_dir / (path.stem + ".md")
+                resolved_path = choose_output_path(out_path)
+                if resolved_path is None:
+                    log(f"⏭  {path.name}  (kihagyva, a kimeneti fájl már létezik)", FG_DIM)
+                    skipped += 1
+                    continue
+                out_path = resolved_path
+
                 is_audio = path.suffix.lower() in AUDIO_EXTENSIONS
                 t0 = None
                 live_ctrl = None
@@ -758,17 +766,22 @@ def main(page: ft.Page):
 
             url_value = url_field.value.strip()
             if url_value:
-                try:
-                    result = md.convert(url_value)
-                    parsed_url = url_value.replace("https://", "").replace("http://", "")
-                    out_name = sanitize_filename(parsed_url)
-                    out_path = out_dir / f"{out_name}.md"
-                    out_path.write_text(result.text_content, encoding="utf-8")
-                    log(f"✓  URL  →  {out_path.name}", GREEN)
-                    converted += 1
-                except Exception as ex:
-                    log(f"✗  URL: {ex}", RED)
-                    errors += 1
+                parsed_url = url_value.replace("https://", "").replace("http://", "")
+                out_name = sanitize_filename(parsed_url)
+                out_path = out_dir / f"{out_name}.md"
+                resolved_path = choose_output_path(out_path)
+                if resolved_path is None:
+                    log("⏭  URL  (kihagyva, a kimeneti fájl már létezik)", FG_DIM)
+                    skipped += 1
+                else:
+                    try:
+                        result = md.convert(url_value)
+                        resolved_path.write_text(result.text_content, encoding="utf-8")
+                        log(f"✓  URL  →  {resolved_path.name}", GREEN)
+                        converted += 1
+                    except Exception as ex:
+                        log(f"✗  URL: {ex}", RED)
+                        errors += 1
 
             link_list = [ln.strip() for ln in (links_field.value or "").splitlines()]
             link_list = [ln for ln in link_list if ln and not ln.startswith("#")]
@@ -789,6 +802,13 @@ def main(page: ft.Page):
                     continue
 
                 out_path = out_dir / f"{basename}.md"
+                resolved_path = choose_output_path(out_path)
+                if resolved_path is None:
+                    log(f"⏭  [{i}/{n_links}]  {short}  (kihagyva, a kimeneti fájl már létezik)", FG_DIM)
+                    skipped += 1
+                    continue
+                out_path = resolved_path
+
                 live = ft.Text(f"⏳  [{i}/{n_links}]  {short}", size=13, color=FG_DIM, font_family="monospace")
                 status_log.controls.append(live)
                 safe_update()
