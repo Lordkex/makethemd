@@ -141,23 +141,110 @@ def is_youtube_url(url: str) -> bool:
     return "youtube.com" in host or "youtu.be" in host
 
 
+class TranscriptMissingError(RuntimeError):
+    """YouTube-videó, amihez nem készült átirat.
+
+    A `candidate` a Whisper-átíráshoz szükséges adatokat tartalmazza
+    (url, cím, hossz mp-ben), vagy None, ha a videó le sem tölthető.
+    """
+
+    def __init__(self, message: str, candidate: dict | None = None):
+        super().__init__(message)
+        self.candidate = candidate
+
+
+def probe_media_info(url: str) -> dict | None:
+    """yt-dlp metaadat-lekérés letöltés nélkül (cím, hossz, felirat-elérhetőség)."""
+    try:
+        import yt_dlp
+
+        opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+        with yt_dlp.YoutubeDL(opts) as ydl:  # type: ignore[arg-type]
+            return ydl.extract_info(url, download=False)
+    except Exception:
+        return None
+
+
+def whisper_transcript_body(md_text: str) -> str:
+    """A markitdown hang-kimenetéből kiszedi a puszta átiratot.
+
+    A konverter a `### Audio Transcript:` elé exiftool-metaadatokat is írhat
+    (Title, Artist, …); azok a letöltött fájl adatai, nem a videóé, ezért eldobjuk.
+    """
+    marker = "### Audio Transcript:"
+    if marker in md_text:
+        return md_text.split(marker, 1)[1].strip()
+    return md_text.strip()
+
+
+def _iso8601_duration(seconds: float) -> str:
+    """Másodperc → ISO-8601 időtartam (PT21M41S), ahogy a markitdown kimenetében szerepel."""
+    h, rem = divmod(int(seconds), 3600)
+    m, s = divmod(rem, 60)
+    return f"PT{h}H{m}M{s}S" if h else f"PT{m}M{s}S"
+
+
+def youtube_metadata_markdown(meta: dict) -> str:
+    """A markitdown YouTube-kimenetével egyező fejléc (cím, metaadatok, leírás).
+
+    Üres stringet ad, ha nincs használható metaadat – ilyenkor a hívó
+    változatlanul, csak az átirattal menti a fájlt.
+    """
+    title = meta.get("title")
+    if not title or title == meta.get("url"):
+        return ""
+    text = f"# YouTube\n\n## {title}\n"
+    stats = ""
+    if meta.get("view_count"):
+        stats += f"- **Views:** {meta['view_count']}\n"
+    if meta.get("tags"):
+        stats += f"- **Keywords:** {','.join(meta['tags'])}\n"
+    if meta.get("duration"):
+        stats += f"- **Runtime:** {_iso8601_duration(meta['duration'])}\n"
+    if stats:
+        text += f"\n### Video Metadata\n{stats}"
+    if meta.get("description"):
+        text += f"\n### Description\n{meta['description']}\n"
+    return text
+
+
 def ensure_real_transcript(url: str, text: str) -> None:
     """YouTube-linkeknél ellenőrzi, hogy tényleg készült-e átirat.
 
-    A markitdown, ha nem éri el a feliratot (pl. a YouTube blokkolja az IP-t,
-    vagy a videónak nincs felirata), csendben visszaesik a weboldal szövegére
-    (menü/lábléc), és azt "sikeres" kimenetként adja vissza. Ilyenkor inkább
-    hibát dobunk, hogy ne szülessen félrevezető, üres .md fájl.
+    A markitdown, ha nem éri el a feliratot, csendben visszaesik a weboldal
+    szövegére (menü/lábléc), és azt "sikeres" kimenetként adja vissza. Ilyenkor
+    yt-dlp-vel kiderítjük a VALÓDI okot (nincs felirat vs. API-blokk), és
+    TranscriptMissingError-t dobunk, hogy ne szülessen félrevezető, üres .md fájl.
     """
-    if is_youtube_url(url) and "### Transcript" not in text:
-        raise RuntimeError(
-            "nem sikerült feliratot/átiratot lekérni. "
-            "Legvalószínűbb ok: TÚL SOK KÉRÉS a YouTube felirat-API felé, "
-            "ezért a YouTube átmenetileg blokkolta az IP-címedet (IpBlocked). "
-            "Megoldás: válts hálózatot (pl. mobilnetről Wi-Fi-re vagy fordítva), "
-            "vagy várj néhány órát, és ne futtass egyszerre sok linket. "
-            "(Ritkább ok: a videónak egyáltalán nincs felirata.)"
+    if not is_youtube_url(url) or "### Transcript" in text:
+        return
+    info = probe_media_info(url)
+    if info is None:
+        raise TranscriptMissingError(
+            "nem sikerült átiratot lekérni, és a videó adatai sem érhetők el. "
+            "Lehet, hogy a videó privát, törölt vagy korhatáros, esetleg a "
+            "YouTube átmenetileg blokkolja a kéréseket erről a hálózatról."
         )
+    candidate = {
+        "url": url,
+        "title": info.get("title") or url,
+        "duration": info.get("duration"),
+        "view_count": info.get("view_count"),
+        "tags": info.get("tags") or [],
+        "description": info.get("description") or "",
+    }
+    if not (info.get("subtitles") or info.get("automatic_captions")):
+        raise TranscriptMissingError(
+            "a videónak NINCS FELIRATA a YouTube-on (se kézi, se automatikus), "
+            "ezért nem készült átirat. Whisper-átírással viszont elkészíthető.",
+            candidate,
+        )
+    raise TranscriptMissingError(
+        "a videónak van felirata, de a YouTube felirat-API nem adta ki – "
+        "valószínűleg túl sok kérés miatt átmenetileg blokkolta az IP-címedet. "
+        "Válts hálózatot vagy várj néhány órát; a Whisper-átírás így is működik.",
+        candidate,
+    )
 
 
 def url_to_basename(url: str) -> str:
@@ -196,13 +283,25 @@ def download_media_audio(url: str, tmpdir: str) -> Path:
         "noprogress": True,
         "ffmpeg_location": FFMPEG_BIN,
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
-        info = ydl.extract_info(url, download=True)
-        downloads = info.get("requested_downloads") or []
-        if downloads and downloads[0].get("filepath"):
-            path = Path(downloads[0]["filepath"])
-        else:
-            path = next(Path(tmpdir).iterdir())
+    # a YouTube néha átmeneti 403-at ad a médialetöltésre → egyszer újrapróbáljuk
+    last_err: Exception | None = None
+    for attempt in range(2):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
+                info = ydl.extract_info(url, download=True)
+            break
+        except Exception as ex:
+            last_err = ex
+            if attempt == 0:
+                time.sleep(3)
+    else:
+        raise last_err  # type: ignore[misc]
+
+    downloads = info.get("requested_downloads") or []
+    if downloads and downloads[0].get("filepath"):
+        path = Path(downloads[0]["filepath"])
+    else:
+        path = next(Path(tmpdir).iterdir())
 
     # A markitdown csak .mp3/.m4a/.mp4/.wav kiterjesztést fogad el; a whisper/ffmpeg a
     # tényleges tartalom alapján dekódol, így a kiterjesztés átnevezése ártalmatlan.
@@ -458,6 +557,7 @@ def main(page: ft.Page):
         label_style=ft.TextStyle(color=FG_DIM),
         hint_style=ft.TextStyle(color=FG_DIM),
         cursor_color=FG,
+        on_change=lambda _e: update_link_count(),
     )
 
     ocr_checkbox = ft.Checkbox(
@@ -475,7 +575,11 @@ def main(page: ft.Page):
             if ln.strip() and not ln.strip().startswith("#")
         ]
         link_count_label.value = f"{len(active)} link betöltve" if active else ""
-        has_media_link = any(is_media_site(ln) for ln in active)
+        # YouTube is számít: felirat híján a batch végén Whisper-átírás ajánlható fel
+        url_single = (url_field.value or "").strip()
+        if url_single:
+            active = active + [url_single]
+        has_media_link = any(is_media_site(ln) or is_youtube_url(ln) for ln in active)
         has_audio_file = any(f.suffix.lower() in AUDIO_EXTENSIONS for f in selected_files)
         audio_settings_row.visible = has_audio_file or has_media_link
         page.update()
@@ -582,7 +686,7 @@ def main(page: ft.Page):
         files_tags_container.visible = bool(selected_files)
         has_audio = any(f.suffix.lower() in AUDIO_EXTENSIONS for f in selected_files)
         has_media_link = any(
-            is_media_site(ln.strip())
+            is_media_site(ln.strip()) or is_youtube_url(ln.strip())
             for ln in (links_field.value or "").splitlines()
             if ln.strip() and not ln.strip().startswith("#")
         )
@@ -630,11 +734,20 @@ def main(page: ft.Page):
     def fmt_seconds(s: float) -> str:
         if s < 60:
             return f"~{int(s)+1} mp"
-        return f"~{int(s/60)+1} perc"
+        if s < 3600:
+            return f"~{int(s/60)+1} perc"
+        h, m = divmod(int(s) // 60, 60)
+        return f"~{h} óra {m} perc"
 
     def fmt_duration(s: float) -> str:
         m, sec = divmod(int(s), 60)
         return f"{m}:{sec:02d}"
+
+    def fmt_hms(s: float) -> str:
+        """Videóhossz emberi formában: 1:23:45 vagy 23:45."""
+        h, rem = divmod(int(s), 3600)
+        m, sec = divmod(rem, 60)
+        return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
     def sanitize_filename(name: str) -> str:
         safe = re.sub(r"[^a-zA-Z0-9_.-]", "_", name)
@@ -688,6 +801,164 @@ def main(page: ft.Page):
         on_click=update_eta,
     ))
 
+    def notify_done(errors: int):
+        """Hangjelzés + villogó tálca-ikon a futás végén."""
+        try:
+            import ctypes
+            import winsound
+
+            beep = winsound.MB_ICONHAND if errors else winsound.MB_ICONASTERISK
+            winsound.MessageBeep(beep)
+            hwnd = ctypes.windll.user32.FindWindowW(None, page.title)
+            if hwnd:
+                ctypes.windll.user32.FlashWindow(hwnd, True)
+        except Exception:
+            pass
+
+    def run_whisper_batch(items: list[dict], lang, model):
+        """A kijelölt (felirat nélküli) videók hangját letölti és Whisperrel átírja."""
+        spinner.visible = True
+        safe_update()
+        ok = 0
+        errs = 0
+        n = len(items)
+        for i, cand in enumerate(items, 1):
+            title = cand["title"] if len(cand["title"]) <= 55 else cand["title"][:54] + "…"
+            live = ft.Text(
+                f"⬇  [{i}/{n}]  {title}  — hang letöltése...",
+                size=13, color=FG_DIM, font_family="monospace",
+            )
+            status_log.controls.append(live)
+            safe_update()
+            tmpdir = tempfile.mkdtemp(prefix="mtd_")
+            try:
+                audio_path = download_media_audio(cand["url"], tmpdir)
+
+                _wp_last = [0.0]
+
+                def _on_progress(msg, ctrl=live, idx=i, _t=_wp_last):
+                    ctrl.value = f"   [{idx}/{n}]  {msg}"
+                    now = time.monotonic()
+                    if now - _t[0] >= 0.15:
+                        _t[0] = now
+                        try:
+                            ctrl.update()
+                        except Exception:
+                            pass
+
+                result = md.convert(
+                    str(audio_path),
+                    whisper_language=lang,
+                    whisper_model=model,
+                    whisper_progress_fn=_on_progress,
+                )
+                out_text = result.text_content
+                # ha van metaadat, a felirat-alapú kimenettel egyező fejlécet kap
+                header = youtube_metadata_markdown(cand)
+                if header:
+                    out_text = f"{header}\n### Transcript\n{whisper_transcript_body(out_text)}\n"
+                out_path = cand["out_path"]
+                out_path.write_text(out_text, encoding="utf-8")
+                status_log.controls.remove(live)
+                log(f"✓  [{i}/{n}]  {title}  →  {out_path.name} [whisper]", GREEN)
+                ok += 1
+            except Exception as ex:
+                try:
+                    status_log.controls.remove(live)
+                except ValueError:
+                    pass
+                log(f"✗  [{i}/{n}]  {title}: {ex}", RED)
+                errs += 1
+            finally:
+                shutil.rmtree(tmpdir, ignore_errors=True)
+
+        spinner.visible = False
+        log(f"\nWhisper-átírás kész: {ok} sikeres, {errs} hiba", RED if errs else CYAN)
+        notify_done(errs)
+
+    def offer_whisper_retry(candidates: list[dict], lang, model):
+        """Batch végi ablak: a felirat nélkül maradt videók Whisper-átírásának felajánlása."""
+        device = "cuda" if _cuda else "cpu"
+        speed = WHISPER_SPEED.get(model, {}).get(device, 5)
+
+        checkboxes: list[ft.Checkbox] = []
+        has_long = False
+        for cand in candidates:
+            dur = cand.get("duration")
+            title = cand["title"] if len(cand["title"]) <= 48 else cand["title"][:47] + "…"
+            if dur:
+                eta = fmt_seconds(dur / speed)
+                label = f"{title}   ·   {fmt_hms(dur)}   ·   átírás kb. {eta}"
+                preselect = dur < 3600  # 1 óránál hosszabbat csak kérésre
+                has_long = has_long or dur >= 3600
+            else:
+                label = f"{title}   ·   ismeretlen hossz"
+                preselect = False
+            checkboxes.append(ft.Checkbox(
+                label=label,
+                value=preselect,
+                data=cand,
+                active_color=GREEN,
+                check_color=BG_DARK,
+                label_style=ft.TextStyle(color=FG, size=12),
+            ))
+
+        def _close():
+            # A Flet saját dialógus-vermet kezel; kézi overlay-manipulációval
+            # a bezárás nem jut el a klienshez, és a modális ablak beragad.
+            page.pop_dialog()
+            safe_update()
+
+        def _cancel(e):
+            _close()
+            log("Whisper-átírás kihagyva.", FG_DIM)
+
+        def _start(e):
+            selected = [cb.data for cb in checkboxes if cb.value]
+            _close()
+            if not selected:
+                log("Nem volt kijelölt videó, a Whisper-átírás elmaradt.", YELLOW)
+                return
+            threading.Thread(
+                target=run_whisper_batch, args=(selected, lang, model), daemon=True
+            ).start()
+
+        content_items: list[ft.Control] = [
+            ft.Text(
+                f"{len(candidates)} videóhoz nem készült átirat. "
+                "Jelöld ki, melyeket írja át a Whisper (hang letöltése + helyi átírás):",
+                color=FG_DIM, size=12,
+            ),
+            *checkboxes,
+        ]
+        if has_long:
+            content_items.append(ft.Text(
+                "Az 1 óránál hosszabb videók alapból nincsenek kijelölve.",
+                color=YELLOW, size=11, italic=True,
+            ))
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            bgcolor=BG_DARK,
+            title=ft.Text("Átírás Whisperrel?", color=FG, weight=ft.FontWeight.BOLD),
+            content=ft.Column(
+                content_items,
+                tight=True,
+                spacing=8,
+                width=540,
+                height=min(120 + 44 * len(checkboxes), 420),
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            actions=[
+                ft.TextButton("Mégse", style=ft.ButtonStyle(color=FG_DIM), on_click=_cancel),
+                ft.TextButton("Átírás", style=ft.ButtonStyle(color=GREEN), on_click=_start),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            shape=ft.RoundedRectangleBorder(radius=8),
+        )
+        page.show_dialog(dlg)
+        safe_update()
+
     def convert(e):
         status_log.controls.clear()
         spinner.visible = True
@@ -713,6 +984,8 @@ def main(page: ft.Page):
                     log("Lásd a SETUP.md PaddleOCR telepítési útmutatóját.", YELLOW)
                     return
             skipped = 0
+            # felirat nélkül maradt videók – a batch végén Whisper-átírást ajánlunk fel rájuk
+            whisper_candidates: list[dict] = []
 
             for path in selected_files:
                 out_path = out_dir / (path.stem + ".md")
@@ -805,6 +1078,8 @@ def main(page: ft.Page):
                         log(f"✓  URL  →  {resolved_path.name}", GREEN)
                         converted += 1
                     except Exception as ex:
+                        if isinstance(ex, TranscriptMissingError) and ex.candidate:
+                            whisper_candidates.append({**ex.candidate, "out_path": resolved_path})
                         log(f"✗  URL: {ex}", RED)
                         errors += 1
 
@@ -896,6 +1171,8 @@ def main(page: ft.Page):
                         status_log.controls.remove(live)
                     except ValueError:
                         pass
+                    if isinstance(ex, TranscriptMissingError) and ex.candidate:
+                        whisper_candidates.append({**ex.candidate, "out_path": out_path})
                     log(f"✗  [{i}/{n_links}]  {short}: {ex}", RED)
                     errors += 1
                 finally:
@@ -918,16 +1195,9 @@ def main(page: ft.Page):
                         "ezekhez nem jött létre valós átirat.",
                         RED,
                     )
-                try:
-                    import ctypes
-                    import winsound
-                    beep = winsound.MB_ICONHAND if errors else winsound.MB_ICONASTERISK
-                    winsound.MessageBeep(beep)
-                    hwnd = ctypes.windll.user32.FindWindowW(None, page.title)
-                    if hwnd:
-                        ctypes.windll.user32.FlashWindow(hwnd, True)
-                except Exception:
-                    pass
+                notify_done(errors)
+                if whisper_candidates:
+                    offer_whisper_retry(whisper_candidates, lang, model)
 
         threading.Thread(target=run, daemon=True).start()
 
