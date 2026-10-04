@@ -22,6 +22,7 @@ if FFMPEG_BIN not in os.environ["PATH"]:
 
 import flet as ft
 from markitdown import MarkItDown
+from facebook_audio import convert_to_mp3, download_facebook_audio, is_facebook_url
 from output_utils import choose_output_path
 from paddleocr_tools.ocr_utils import append_image_ocr, check_ocr_environment
 
@@ -132,8 +133,23 @@ YT_DLP_SITES = (
 
 
 def is_media_site(url: str) -> bool:
-    host = urlparse(url).netloc.lower()
-    return any(site in host for site in YT_DLP_SITES)
+    host = (urlparse(url).hostname or "").lower()
+    return any(host == site or host.endswith("." + site) for site in YT_DLP_SITES)
+
+
+def has_real_transcript(text: str) -> bool:
+    """A leírás vagy egy üres átirat-fejléc nem számít kész átiratnak."""
+    return any(match.group(1).strip() for match in re.finditer(
+        r"^### (?:Transcript|Audio Transcript|Felirat):?[^\S\n]*\n(.*?)(?=^#{1,3} |\Z)",
+        text, re.MULTILINE | re.DOTALL,
+    ))
+
+
+def output_has_transcript(path: Path) -> bool:
+    try:
+        return has_real_transcript(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError):
+        return False
 
 
 def is_youtube_url(url: str) -> bool:
@@ -266,7 +282,7 @@ def url_to_basename(url: str) -> str:
     return base[:80] or "link"
 
 
-def download_media_audio(url: str, tmpdir: str) -> Path:
+def _download_media_with_ytdlp(url: str, tmpdir: str) -> Path:
     """yt-dlp-vel letölti a videót (hanggal) a tmpdir-be, és visszaadja az útvonalat.
 
     A Whisper az ffmpeg-en keresztül a videófájlból is kinyeri a hangot, ezért nem
@@ -281,14 +297,20 @@ def download_media_audio(url: str, tmpdir: str) -> Path:
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        "ffmpeg_location": FFMPEG_BIN,
+        "noplaylist": True,
+        "socket_timeout": 30,
     }
+    if Path(FFMPEG_BIN).is_dir():
+        ydl_opts["ffmpeg_location"] = FFMPEG_BIN
     # a YouTube néha átmeneti 403-at ad a médialetöltésre → egyszer újrapróbáljuk
     last_err: Exception | None = None
     for attempt in range(2):
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
                 info = ydl.extract_info(url, download=True)
+                if not isinstance(info, dict):
+                    raise RuntimeError("A letöltő nem adott médiafájlt.")
+                filename = ydl.prepare_filename(info)
             break
         except Exception as ex:
             last_err = ex
@@ -301,7 +323,9 @@ def download_media_audio(url: str, tmpdir: str) -> Path:
     if downloads and downloads[0].get("filepath"):
         path = Path(downloads[0]["filepath"])
     else:
-        path = next(Path(tmpdir).iterdir())
+        path = Path(info.get("filepath") or info.get("_filename") or filename)
+    if not path.is_file() or path.stat().st_size == 0:
+        raise RuntimeError("A letöltött médiafájl nem található vagy üres.")
 
     # A markitdown csak .mp3/.m4a/.mp4/.wav kiterjesztést fogad el; a whisper/ffmpeg a
     # tényleges tartalom alapján dekódol, így a kiterjesztés átnevezése ártalmatlan.
@@ -310,6 +334,24 @@ def download_media_audio(url: str, tmpdir: str) -> Path:
         path.rename(renamed)
         path = renamed
     return path
+
+
+def download_media_audio(url: str, tmpdir: str, progress_fn=None) -> Path:
+    """Facebooknál valódi MP3-at ad; yt-dlp-hiba esetén ingyenes FDOWN-t használ."""
+    if not is_facebook_url(url):
+        return _download_media_with_ytdlp(url, tmpdir)
+    try:
+        source = _download_media_with_ytdlp(url, tmpdir)
+        if progress_fn:
+            progress_fn("Facebook-hangsáv átalakítása MP3-má...")
+        return convert_to_mp3(source, Path(tmpdir) / "facebook_audio.mp3", FFMPEG_BIN)
+    except Exception as ex:
+        logging.getLogger(__name__).info("Facebook yt-dlp letöltés sikertelen: %s", ex)
+        if progress_fn:
+            progress_fn("A közvetlen letöltés nem sikerült; ingyenes FDOWN tartalékletöltő indul...")
+        return download_facebook_audio(
+            url, tmpdir, ffmpeg_location=FFMPEG_BIN, progress_fn=progress_fn,
+        )
 
 
 def _subtitle_to_text(data: str) -> str:
@@ -445,6 +487,49 @@ def fetch_media_captions(url: str, lang: str | None) -> str | None:
         return _generic_captions(url, lang)
     except Exception:
         return None
+
+
+def convert_link(md, url: str, lang: str | None, model: str = "turbo", progress_fn=None) -> tuple[str, str]:
+    """Az egyedi URL és a linklista közös felirat-/Whisper-útvonala."""
+    if not is_media_site(url):
+        text = md.convert(url).text_content
+        ensure_real_transcript(url, text)
+        return text, ""
+
+    facebook = is_facebook_url(url)
+    header = ""
+    if progress_fn:
+        progress_fn("Felirat keresése...")
+    if facebook:
+        try:
+            header = md.convert(url).text_content
+        except Exception:
+            pass  # A HTML-oldal hibája mellett a hang még letölthető lehet.
+        if header.startswith("# Facebook\n"):
+            if has_real_transcript(header):
+                return header, " [felirat]"
+        else:
+            header = f"# Facebook\n\n- **Source:** {url}\n"
+
+    captions = fetch_media_captions(url, lang)
+    if captions:
+        text = f"{header.rstrip()}\n\n### Transcript\n{captions}\n" if facebook else "### Felirat:\n\n" + captions
+        return text, " [felirat]"
+
+    if progress_fn:
+        progress_fn("Nincs felirat, hang letöltése...")
+    with tempfile.TemporaryDirectory(prefix="mtd_") as tmpdir:
+        audio_path = download_media_audio(url, tmpdir, progress_fn=progress_fn)
+        result = md.convert(
+            str(audio_path), whisper_language=lang, whisper_model=model,
+            whisper_progress_fn=progress_fn,
+        )
+        text = result.text_content
+        if not has_real_transcript(text):
+            raise RuntimeError("A hangletöltés után nem készült átirat; a kimenet nem lett elmentve.")
+        if facebook:
+            text = f"{header.rstrip()}\n\n### Transcript\n{whisper_transcript_body(text)}\n"
+        return text, " [whisper]"
 
 
 def main(page: ft.Page):
@@ -766,7 +851,7 @@ def main(page: ft.Page):
             resize_window()
             return
 
-        model = model_dd.value or "base"
+        model = model_dd.value or "turbo"
         controls = []
         total_eta = 0.0
         for f in audio_files:
@@ -966,7 +1051,7 @@ def main(page: ft.Page):
         page.update()
 
         lang = language_dd.value if language_dd.value != "auto" else None
-        model = model_dd.value or "base"
+        model = model_dd.value or "turbo"
 
         def run():
             converted = 0
@@ -1071,32 +1156,45 @@ def main(page: ft.Page):
                     log("⏭  URL  (kihagyva, a kimeneti fájl már létezik)", FG_DIM)
                     skipped += 1
                 else:
+                    live_url = ft.Text("⏳  URL feldolgozása...", size=13, color=FG_DIM, font_family="monospace")
+                    status_log.controls.append(live_url)
+                    safe_update()
+
+                    def _on_url_progress(msg):
+                        live_url.value = f"   {msg}"
+                        try:
+                            live_url.update()
+                        except Exception:
+                            pass
+
                     try:
-                        result = md.convert(url_value)
-                        ensure_real_transcript(url_value, result.text_content)
-                        resolved_path.write_text(result.text_content, encoding="utf-8")
-                        log(f"✓  URL  →  {resolved_path.name}", GREEN)
+                        out_text, method = convert_link(md, url_value, lang, model, _on_url_progress)
+                        resolved_path.write_text(out_text, encoding="utf-8")
+                        log(f"✓  URL  →  {resolved_path.name}{method}", GREEN)
                         converted += 1
                     except Exception as ex:
                         if isinstance(ex, TranscriptMissingError) and ex.candidate:
                             whisper_candidates.append({**ex.candidate, "out_path": resolved_path})
                         log(f"✗  URL: {ex}", RED)
                         errors += 1
+                    finally:
+                        status_log.controls.remove(live_url)
+                        safe_update()
 
             link_list = [ln.strip() for ln in (links_field.value or "").splitlines()]
             link_list = [ln for ln in link_list if ln and not ln.startswith("#")]
             n_links = len(link_list)
 
-            def _already_converted(name: str) -> bool:
-                if (out_dir / f"{name}.md").exists():
-                    return True
-                return any(out_dir.glob(f"???_{name}.md"))
+            def _already_converted(name: str, url: str) -> bool:
+                paths = [out_dir / f"{name}.md", *out_dir.glob(f"???_{name}.md")]
+                return any(path.exists() and (not is_facebook_url(url) or output_has_transcript(path))
+                           for path in paths)
 
             for i, url in enumerate(link_list, 1):
                 short = url if len(url) <= 55 else url[:54] + "…"
                 basename = url_to_basename(url)
 
-                if _already_converted(basename):
+                if _already_converted(basename, url):
                     log(f"⏭  [{i}/{n_links}]  {short}  (már megvan, kihagyva)", FG_DIM)
                     skipped += 1
                     continue
@@ -1113,55 +1211,21 @@ def main(page: ft.Page):
                 status_log.controls.append(live)
                 safe_update()
 
-                tmpdir = None
                 method = ""
-                try:
-                    if is_media_site(url):
-                        # 1) gyors út: kész felirat (Whisper nélkül)
-                        live.value = f"💬  [{i}/{n_links}]  {short}  — felirat keresése..."
+                _lp_last = [0.0]
+
+                def _on_link_progress(msg, ctrl=live, idx=i, _t=_lp_last):
+                    ctrl.value = f"   [{idx}/{n_links}]  {msg}"
+                    now = time.monotonic()
+                    if now - _t[0] >= 0.15:
+                        _t[0] = now
                         try:
-                            live.update()
+                            ctrl.update()
                         except Exception:
                             pass
-                        out_text = fetch_media_captions(url, lang)
 
-                        if out_text:
-                            out_text = "### Felirat:\n\n" + out_text
-                            method = " [felirat]"
-                        else:
-                            # 2) tartalék: hang letöltése + Whisper-átírás
-                            live.value = f"⬇  [{i}/{n_links}]  {short}  — nincs felirat, hang letöltése..."
-                            try:
-                                live.update()
-                            except Exception:
-                                pass
-                            tmpdir = tempfile.mkdtemp(prefix="mtd_")
-                            audio_path = download_media_audio(url, tmpdir)
-
-                            _lp_last = [0.0]
-
-                            def _on_link_progress(msg, ctrl=live, idx=i, _t=_lp_last):
-                                ctrl.value = f"   [{idx}/{n_links}]  {msg}"
-                                now = time.monotonic()
-                                if now - _t[0] >= 0.15:
-                                    _t[0] = now
-                                    try:
-                                        ctrl.update()
-                                    except Exception:
-                                        pass
-
-                            result = md.convert(
-                                str(audio_path),
-                                whisper_language=lang,
-                                whisper_model=model,
-                                whisper_progress_fn=_on_link_progress,
-                            )
-                            out_text = result.text_content
-                            method = " [whisper]"
-                    else:
-                        out_text = md.convert(url).text_content
-                        ensure_real_transcript(url, out_text)
-
+                try:
+                    out_text, method = convert_link(md, url, lang, model, _on_link_progress)
                     out_path.write_text(out_text, encoding="utf-8")
                     status_log.controls.remove(live)
                     log(f"✓  [{i}/{n_links}]  {short}  →  {out_path.name}{method}", GREEN)
@@ -1175,10 +1239,6 @@ def main(page: ft.Page):
                         whisper_candidates.append({**ex.candidate, "out_path": out_path})
                     log(f"✗  [{i}/{n_links}]  {short}: {ex}", RED)
                     errors += 1
-                finally:
-                    if tmpdir:
-                        shutil.rmtree(tmpdir, ignore_errors=True)
-
             spinner.visible = False
             if converted == 0 and errors == 0 and skipped == 0:
                 log("Nincs kiválasztott fájl vagy URL.", YELLOW)

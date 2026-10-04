@@ -20,9 +20,16 @@ a helyi kép-OCR-t [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) és
   ([youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api), gyors, nem Whisper).
 - **Linklista:** egy `.txt`-ben soronként megadott linkek **kötegelt** feldolgozása. Ami már megvan
   az `output/` mappában, azt kihagyja.
-- **TikTok / Instagram / X / Vimeo:** elsőként a videó **beágyazott feliratát** próbálja leszedni
+- **TikTok / Facebook / Instagram / X / Vimeo:** elsőként a videó **beágyazott feliratát** próbálja leszedni
   (gyors); ha nincs, [yt-dlp](https://github.com/yt-dlp/yt-dlp)-vel letölti a hangot és
   Whisperrel írja át.
+- **Facebook tartalékletöltő:** ha a közvetlen letöltés nem sikerül, az ingyenes
+  [FDOWN](https://fdown.tools/) szolgáltatással kéri le a nyilvános videó hangsávját,
+  ffmpeg-gel valódi MP3-má alakítja, majd a kiválasztott Whisper-modellel
+  (alapból **turbo**) átírja. API-kulcs és regisztráció nem szükséges.
+  Az egyedi URL és a linklista is ezt az útvonalat használja; a Facebook-leírás önmagában
+  nem számít kész átiratnak. A videó URL-je a tartalékletöltéskor eljut a FDOWN-hoz,
+  az átírás helyben fut. A szolgáltatás elérhetősége és a Facebook-videó nyilvános hozzáférése szükséges.
 - **Kép-OCR (opcionális):** a beágyazott képekből helyben,
   **[PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)**-rel nyer ki szöveget
   (PDF-képekhez [PyMuPDF](https://github.com/pymupdf/PyMuPDF), lásd 5. pont).
@@ -106,7 +113,7 @@ python app.py
 
 ### Használat
 1. **Fájl(ok) kiválasztása** – tallózással hozzáadod a konvertálandó fájlokat.
-2. **YouTube URL** – egyetlen videó átirata.
+2. **Video / Page URL** – egyetlen videó átirata vagy weboldal konvertálása; Facebook/Reels is megadható.
 3. **Linklista** – beilleszted a linkeket (soronként egy), vagy a **Linklista (.txt) betöltése**
    gombbal beolvasol egy szövegfájlt.
 4. **OCR képekből (lokális PaddleOCR)** – opcionális; ha bepipálod, a beágyazott képekből is
