@@ -20,7 +20,7 @@ a helyi kép-OCR-t [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) és
   ([youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api), gyors, nem Whisper).
 - **Linklista:** egy `.txt`-ben soronként megadott linkek **kötegelt** feldolgozása. Ami már megvan
   az `output/` mappában, azt kihagyja.
-- **TikTok / Facebook / Instagram / X / Vimeo:** elsőként a videó **beágyazott feliratát** próbálja leszedni
+- **TikTok / Facebook / Instagram / X:** elsőként a videó **beágyazott feliratát** próbálja leszedni
   (gyors); ha nincs, [yt-dlp](https://github.com/yt-dlp/yt-dlp)-vel letölti a hangot és
   Whisperrel írja át.
 - **Facebook tartalékletöltő:** ha a közvetlen letöltés nem sikerül, az ingyenes

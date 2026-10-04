@@ -51,7 +51,7 @@ openai-whisper
 # YouTube
 youtube-transcript-api==1.2.4
 
-# Videó-linkek (TikTok, Instagram, X, Vimeo, ...) – hang letöltése Whisper-átíráshoz
+# Videó-linkek (TikTok, Facebook, Instagram, X) – hang letöltése Whisper-átíráshoz
 yt-dlp
 
 # GUI

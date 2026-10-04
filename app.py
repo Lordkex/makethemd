@@ -126,9 +126,6 @@ YT_DLP_SITES = (
     "fb.watch",
     "twitter.com",
     "x.com",
-    "vimeo.com",
-    "dailymotion.com",
-    "twitch.tv",
 )
 
 
@@ -535,7 +532,7 @@ def convert_link(md, url: str, lang: str | None, model: str = "turbo", progress_
 def main(page: ft.Page):
     page.title = "MakeThemd"
     page.window.width = 770
-    page.window.height = 820
+    page.window.height = 860
     page.bgcolor = BG
     page.padding = 24
 
@@ -840,8 +837,8 @@ def main(page: ft.Page):
 
     def resize_window():
         n = sum(1 for f in selected_files if f.suffix.lower() in AUDIO_EXTENSIONS)
-        # 820 alap (nincs audio sor); +80 a settings+ETA sornak, +28 minden további fájlhoz
-        page.window.height = 820 if n == 0 else min(900 + (n - 1) * 28, 1050)
+        # 860 alap (nincs audio sor); +80 a settings+ETA sornak, +28 minden további fájlhoz
+        page.window.height = 860 if n == 0 else min(940 + (n - 1) * 28, 1050)
         page.update()
 
     def update_eta(_e=None):
@@ -1261,48 +1258,120 @@ def main(page: ft.Page):
 
         threading.Thread(target=run, daemon=True).start()
 
-    def format_row(icon: str, label: str, exts: str) -> ft.Row:
+    def format_row(icon, label: str, exts: str) -> ft.Row:
         return ft.Row([
-            ft.Text(icon, size=14),
+            ft.Container(
+                content=ft.Icon(icon, size=18, color=CYAN),
+                width=32, height=32, alignment=ft.Alignment.CENTER,
+                bgcolor=ft.Colors.with_opacity(0.08, CYAN), border_radius=9,
+            ),
             ft.Column([
                 ft.Text(label, size=12, weight=ft.FontWeight.W_600, color=FG),
                 ft.Text(exts, size=11, color=FG_DIM),
-            ], spacing=1, tight=True),
-        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)
+            ], spacing=0, tight=True),
+        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
-    info_dialog = ft.AlertDialog(
-        bgcolor=BG_DARK,
-        title=ft.Text("Támogatott formátumok", color=FG, weight=ft.FontWeight.BOLD),
+    formats = [
+        (ft.Icons.DESCRIPTION_OUTLINED, "Dokumentumok", "PDF, DOCX, DOC, PPTX"),
+        (ft.Icons.TABLE_CHART_OUTLINED, "Táblázatok", "XLSX, XLS, CSV"),
+        (ft.Icons.ARTICLE_OUTLINED, "Webfájlok és szöveg", "HTML, HTM, XML, RSS"),
+        (ft.Icons.MENU_BOOK_OUTLINED, "E-könyvek", "EPUB, AZW3, MOBI, FB2"),
+        (ft.Icons.DATA_OBJECT, "Notebook és adatok", "IPYNB, JSON"),
+        (ft.Icons.IMAGE_OUTLINED, "Képek", "PNG, JPG, JPEG, GIF, BMP, WEBP"),
+        (ft.Icons.AUDIO_FILE_OUTLINED, "Hangfájlok", "MP3, WAV, M4A"),
+        (ft.Icons.MAIL_OUTLINE, "Outlook-üzenetek", "MSG"),
+        (ft.Icons.FOLDER_ZIP_OUTLINED, "Archívumok", "ZIP"),
+    ]
+    half = (len(formats) + 1) // 2
+    BUBBLE_W = 540
+    formats_bubble = ft.Container(
         content=ft.Column([
-            format_row("📄", "Dokumentumok", "PDF, DOCX, DOC, PPTX"),
-            format_row("📊", "Táblázatok",   "XLSX, XLS, CSV"),
-            format_row("🌐", "Web / szöveg", "HTML, HTM, XML, RSS, EPUB"),
-            format_row("📓", "Notebook",     "IPYNB, JSON"),
-            format_row("🖼️", "Kép",          "PNG, JPG, JPEG, GIF, BMP, WEBP"),
-            format_row("🎵", "Audio",        "MP3, WAV, M4A  (ffmpeg szükséges)"),
-            format_row("📬", "Outlook",      "MSG"),
-            format_row("🗜️", "Archívum",     "ZIP"),
-            format_row("▶️", "URL",          "YouTube link"),
-            format_row("🎬", "Videó-linkek", "TikTok, Instagram, X, Vimeo (hang → átírás)"),
-            format_row("📋", "Linklista",    "TXT, soronként egy URL"),
-        ], spacing=10, tight=True, width=320),
-        actions=[
-            ft.TextButton("Bezárás", style=ft.ButtonStyle(color=FG),
-                          on_click=lambda e: close_info(e)),
-        ],
-        actions_alignment=ft.MainAxisAlignment.END,
-        shape=ft.RoundedRectangleBorder(radius=8),
-        inset_padding=ft.Padding(left=60, right=60, top=40, bottom=40),
+            ft.Row([
+                ft.Icon(ft.Icons.AUTO_AWESOME, size=16, color=CYAN),
+                ft.Text("Konvertálható fájltípusok", size=14, weight=ft.FontWeight.BOLD, color=FG),
+            ], spacing=8),
+            ft.Divider(height=1, color=BORDER),
+            ft.Row([
+                ft.Column([format_row(*f) for f in formats[:half]], spacing=12, tight=True, width=240),
+                ft.Column([format_row(*f) for f in formats[half:]], spacing=12, tight=True, width=240),
+            ], spacing=16, vertical_alignment=ft.CrossAxisAlignment.START),
+        ], spacing=12, tight=True),
+        width=BUBBLE_W,
+        padding=ft.Padding(left=18, right=18, top=14, bottom=16),
+        bgcolor=BG_DARK,
+        border=ft.Border.all(1, ft.Colors.with_opacity(0.35, CYAN)),
+        border_radius=16,
+        shadow=ft.BoxShadow(blur_radius=24, spread_radius=1, color=ft.Colors.with_opacity(0.5, "#000000"),
+                            offset=ft.Offset(0, 8)),
+        visible=False,
     )
-    page.overlay.append(info_dialog)
+    page.overlay.append(formats_bubble)
 
-    def show_info(e):
-        info_dialog.open = True
+    info_tile = ft.Container(
+        content=ft.Icon(ft.Icons.INFO_OUTLINE, size=24, color=CYAN),
+        width=42, height=42, alignment=ft.Alignment.CENTER, border_radius=21,
+        bgcolor=ft.Colors.with_opacity(0.10, CYAN),
+        border=ft.Border.all(1.5, ft.Colors.with_opacity(0.45, CYAN)),
+        animate=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
+    )
+
+    def show_formats(e):
+        # A csempe bal felső sarka ablak-koordinátában; a buborék alatta nyílik, ablakon belül tartva.
+        x = e.global_position.x - e.local_position.x
+        y = e.global_position.y - e.local_position.y
+        max_left = (page.width or page.window.width or 770) - BUBBLE_W - 12
+        formats_bubble.left = max(12, min(x, max_left))
+        formats_bubble.top = y + 42 + 8
+        formats_bubble.visible = True
+        info_tile.bgcolor = ft.Colors.with_opacity(0.20, CYAN)
         page.update()
 
-    def close_info(e):
-        info_dialog.open = False
+    def hide_formats(_e):
+        formats_bubble.visible = False
+        info_tile.bgcolor = ft.Colors.with_opacity(0.10, CYAN)
         page.update()
+
+    info_button = ft.GestureDetector(
+        content=info_tile,
+        on_enter=show_formats,
+        on_exit=hide_formats,
+        mouse_cursor=ft.MouseCursor.HELP,
+    )
+
+    def platform_tile(name: str, slug: str | None, color: str, tooltip: str) -> ft.Container:
+        logo = (ft.Image(
+            src=f"brands/{slug}.svg", width=21, height=21,
+            fit=ft.BoxFit.CONTAIN, semantics_label=name,
+        ) if slug else ft.Icon(ft.Icons.LANGUAGE, size=22, color=color))
+
+        def on_hover(e):
+            hovered = e.data is True
+            e.control.bgcolor = ft.Colors.with_opacity(0.16 if hovered else 0.07, color)
+            e.control.border = ft.Border.all(1, ft.Colors.with_opacity(0.55 if hovered else 0.2, color))
+            e.control.update()
+
+        return ft.Container(
+            content=logo, width=38, height=38, alignment=ft.Alignment.CENTER,
+            border_radius=11, bgcolor=ft.Colors.with_opacity(0.07, color),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.2, color)),
+            tooltip=tooltip, on_hover=on_hover, animate=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
+        )
+
+    platforms_row = ft.Row([
+        ft.Column([
+            ft.Text("Konvertálható", size=13, weight=ft.FontWeight.W_600, color=FG),
+            ft.Text("fájlok és linkek", size=11, color=FG_DIM),
+        ], spacing=0, tight=True),
+        ft.Container(width=1, height=28, bgcolor=BORDER, margin=ft.Margin(left=6, right=6, top=0, bottom=0)),
+        info_button,
+        platform_tile("TikTok", "tiktok", "#F4EEE8", "TikTok · videók"),
+        platform_tile("YouTube", "youtube", "#FF5D5D", "YouTube · videók és feliratok"),
+        platform_tile("Facebook", "facebook", "#5B9BFF", "Facebook · videók és Reels · fb.watch"),
+        platform_tile("Instagram", "instagram", "#F58AB4", "Instagram · videók és Reels"),
+        platform_tile("X / Twitter", "x", "#F4EEE8", "X / Twitter · videók"),
+        platform_tile("Weboldalak", None, CYAN, "Weboldalak · cikkek és oldalak"),
+    ], spacing=8, height=48, scroll=ft.ScrollMode.AUTO,
+       vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     copy_label = ft.Text("", size=11, color=GREEN)
 
@@ -1340,16 +1409,7 @@ def main(page: ft.Page):
         page.update()
 
     page.add(
-        ft.Row([
-            ft.Text("Konvertálható fájlok", size=14, weight=ft.FontWeight.W_600, color=FG_DIM),
-            ft.IconButton(
-                icon=ft.Icons.INFO_OUTLINE,
-                icon_size=16,
-                icon_color=FG_DIM,
-                style=ft.ButtonStyle(padding=ft.Padding(4, 4, 4, 4)),
-                on_click=lambda e: show_info(e),
-            ),
-        ], spacing=2, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        platforms_row,
         ft.Row([
             ft.Button(
                 "Fájl(ok) kiválasztása",
