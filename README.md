@@ -19,7 +19,14 @@ a helyi kép-OCR-t [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) és
 - **YouTube → szöveg:** a kész felirat/átirat letöltése
   ([youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api), gyors, nem Whisper).
 - **Linklista:** egy `.txt`-ben soronként megadott linkek **kötegelt** feldolgozása. Ami már megvan
-  az `output/` mappában, azt kihagyja.
+  a kimeneti mappában, azt kihagyja, a listán belül
+  ismétlődő linkeket pedig csak egyszer dolgozza fel.
+- **Újrapróbálás:** a sikertelen linkek (pl. YouTube felirat-API blokk) a kimeneti mappa
+  `_sikertelen_linkek.txt` fájljába kerülnek a hiba okával és dátumával. Később az
+  **Újrapróbálás** gomb visszatölti őket a linklistába; ami elkészül, lekerül a listáról.
+- **YouTube-kímélet:** a YouTube-videók között 4 mp szünetet tart, hogy nagy listánál se jöjjön
+  IP-tiltás. Ha mégis letiltja a felirat-kéréseket, a lista többi YouTube-linkjét már nem kéri le,
+  hanem elhalasztja (a sikertelen-listára kerülnek, és Whisper-átírás is kérhető rájuk).
 - **TikTok / Facebook / Instagram / X:** elsőként a videó **beágyazott feliratát** próbálja leszedni
   (gyors); ha nincs, [yt-dlp](https://github.com/yt-dlp/yt-dlp)-vel letölti a hangot és
   Whisperrel írja át.
@@ -84,6 +91,13 @@ A projekt mappájában (`makethemd`) nyiss egy terminált, majd:
 ```powershell
 python -m pip install -r requirements.txt
 ```
+> A YouTube-videók letöltéséhez a yt-dlp-nek JavaScript-futtató kell (**Node.js** vagy
+> **Deno**, bármelyik elég). Enélkül a hangletöltés `HTTP Error 403: Forbidden` hibát adhat.
+> A `start_makethemd.bat` indításkor hetente egyszer automatikusan frissíti a letöltő-csomagokat
+> (`yt-dlp[default]`, `youtube-transcript-api`) – a többi csomaghoz nem nyúl. Ha az app futás
+> közben elavult letöltőre utaló hibát lát (pl. `403 Forbidden`), a következő indításkor
+> azonnal frissít; ha a friss verzió nem töltődik be, visszaállítja az előzőt.
+> `python app.py` közvetlen indításakor ez kimarad; kézzel: `python updater.py`.
 
 **2. PyTorch (a Whisper-átíráshoz)**
 

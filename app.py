@@ -23,7 +23,10 @@ if FFMPEG_BIN not in os.environ["PATH"]:
 import flet as ft
 from markitdown import MarkItDown
 from facebook_audio import convert_to_mp3, download_facebook_audio, is_facebook_url
-from output_utils import choose_output_path
+from output_utils import (
+    FAILED_LINKS_NAME, choose_output_path, read_failed_links, record_link_result,
+    load_settings, save_settings, saved_output_dir,
+)
 from paddleocr_tools.ocr_utils import append_image_ocr, check_ocr_environment
 
 # Importok után állítjuk be, hogy a pdfminer saját setLevel-jeit felülírjuk
@@ -159,11 +162,38 @@ class TranscriptMissingError(RuntimeError):
 
     A `candidate` a Whisper-átíráshoz szükséges adatokat tartalmazza
     (url, cím, hossz mp-ben), vagy None, ha a videó le sem tölthető.
+    A `blocked` jelzi, hogy a YouTube letiltotta az IP-t a felirat-API-n.
     """
 
-    def __init__(self, message: str, candidate: dict | None = None):
+    def __init__(self, message: str, candidate: dict | None = None, blocked: bool = False):
         super().__init__(message)
         self.candidate = candidate
+        self.blocked = blocked
+
+
+# YouTube-videók között ennyi mp szünet, hogy nagy listánál se jöjjön IP-tiltás
+YOUTUBE_PAUSE_S = 4.0
+
+
+# Minden yt-dlp híváshoz. A YouTube a médiacímeket JS-kihívással védi: futtató nélkül 403-at
+# ad a letöltésre. A yt-dlp alapból csak a Denót keresi, ezért a Node-ot is engedélyezzük
+# (a nem telepített futtatót kihagyja). A színkódok ne kerüljenek a naplóba ([0;31mERROR).
+YTDLP_BASE_OPTS = {"js_runtimes": {"deno": {}, "node": {}}, "color": "no_color"}
+
+# Elavult letöltőre utaló hibák (nem IP-tiltás): ilyenkor a következő indításkor frissítünk.
+_OUTDATED_HINTS = ("HTTP Error 403", "Unable to extract", "nsig extraction failed",
+                   "Requested format is not available", "Signature extraction failed")
+
+
+def flag_update_if_outdated(ex: Exception) -> bool:
+    """Ha a hiba elavult yt-dlp-re utal, kéri a frissítést a következő indításra.
+
+    True, ha most kérte először (ilyenkor a hívó egyszer jelez a naplóban).
+    """
+    if not any(hint in str(ex) for hint in _OUTDATED_HINTS) or load_settings().get("force_update"):
+        return False
+    save_settings(force_update=True)
+    return True
 
 
 def probe_media_info(url: str) -> dict | None:
@@ -171,7 +201,7 @@ def probe_media_info(url: str) -> dict | None:
     try:
         import yt_dlp
 
-        opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+        opts = {**YTDLP_BASE_OPTS, "quiet": True, "no_warnings": True, "skip_download": True}
         with yt_dlp.YoutubeDL(opts) as ydl:  # type: ignore[arg-type]
             return ydl.extract_info(url, download=False)
     except Exception:
@@ -257,6 +287,7 @@ def ensure_real_transcript(url: str, text: str) -> None:
         "valószínűleg túl sok kérés miatt átmenetileg blokkolta az IP-címedet. "
         "Válts hálózatot vagy várj néhány órát; a Whisper-átírás így is működik.",
         candidate,
+        blocked=True,
     )
 
 
@@ -279,6 +310,19 @@ def url_to_basename(url: str) -> str:
     return base[:80] or "link"
 
 
+def parse_link_list(text: str) -> list[str]:
+    """Linklista-mező → URL-ek (üres és #-kal kezdődő sorok nélkül)."""
+    return [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+
+
+def already_converted(out_dir: Path, url: str) -> bool:
+    """Van-e már kész kimenet a linkhez a mappában (Facebooknál csak valódi átirattal)."""
+    name = url_to_basename(url)
+    paths = [out_dir / f"{name}.md", *out_dir.glob(f"???_{name}.md")]
+    return any(path.exists() and (not is_facebook_url(url) or output_has_transcript(path))
+               for path in paths)
+
+
 def _download_media_with_ytdlp(url: str, tmpdir: str) -> Path:
     """yt-dlp-vel letölti a videót (hanggal) a tmpdir-be, és visszaadja az útvonalat.
 
@@ -289,6 +333,7 @@ def _download_media_with_ytdlp(url: str, tmpdir: str) -> Path:
     import yt_dlp
 
     ydl_opts = {
+        **YTDLP_BASE_OPTS,
         "format": "download/bestaudio/best",
         "outtmpl": str(Path(tmpdir) / "%(id)s.%(ext)s"),
         "quiet": True,
@@ -388,7 +433,8 @@ def _tiktok_caption_text(url: str, lang: str | None) -> str | None:
     html = ""
     try:
         os.chdir(dump_dir)
-        opts = {"quiet": True, "no_warnings": True, "skip_download": True, "write_pages": True}
+        opts = {**YTDLP_BASE_OPTS, "quiet": True, "no_warnings": True, "skip_download": True,
+                "write_pages": True}
         with yt_dlp.YoutubeDL(opts) as ydl:  # type: ignore[arg-type]
             ydl.extract_info(url, download=False)
         dumps = [f for f in os.listdir(dump_dir) if f.endswith(".dump")]
@@ -436,7 +482,7 @@ def _generic_captions(url: str, lang: str | None) -> str | None:
     """Általános felirat-lekérés yt-dlp subtitles/automatic_captions alapján (nem TikTok)."""
     import yt_dlp
 
-    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    probe_opts = {**YTDLP_BASE_OPTS, "quiet": True, "no_warnings": True, "skip_download": True}
     with yt_dlp.YoutubeDL(probe_opts) as ydl:  # type: ignore[arg-type]
         info = ydl.extract_info(url, download=False)
 
@@ -538,7 +584,8 @@ def main(page: ft.Page):
 
     md = MarkItDown()
     selected_files: list[Path] = []
-    current_output: list[Path] = [OUTPUT]
+    # újraindítás után is az utoljára választott mappába ment (és ott keresi a kész fájlokat)
+    current_output: list[Path] = [saved_output_dir(OUTPUT)]
 
     border_style = ft.Border(
         left=ft.BorderSide(1, BORDER),
@@ -652,10 +699,7 @@ def main(page: ft.Page):
     link_count_label = ft.Text("", size=11, color=FG_DIM)
 
     def update_link_count(_e=None):
-        active = [
-            ln.strip() for ln in (links_field.value or "").splitlines()
-            if ln.strip() and not ln.strip().startswith("#")
-        ]
+        active = parse_link_list(links_field.value or "")
         link_count_label.value = f"{len(active)} link betöltve" if active else ""
         # YouTube is számít: felirat híján a batch végén Whisper-átírás ajánlható fel
         url_single = (url_field.value or "").strip()
@@ -699,6 +743,34 @@ def main(page: ft.Page):
     def clear_links(e):
         links_field.value = ""
         update_link_count()
+
+    def refresh_retry_button():
+        n = len(read_failed_links(current_output[0]))
+        retry_btn.content = f"Újrapróbálás ({n})" if n else "Újrapróbálás"
+        retry_btn.disabled = n == 0
+
+    def load_failed_links(e):
+        failed = read_failed_links(current_output[0])
+        refresh_retry_button()
+        if not failed:
+            update_link_count()
+            return
+        links_field.value = "\n".join(failed)
+        update_link_count()
+        log(
+            f"↻  {len(failed)} sikertelen link visszatöltve a linklistába "
+            f"({FAILED_LINKS_NAME}) – indítsd a Konvertálást.",
+            CYAN,
+        )
+
+    retry_btn = ft.Button(
+        "Újrapróbálás",
+        icon=ft.Icons.REPLAY,
+        style=btn_style,
+        tooltip=f"A kimeneti mappa korábban sikertelen linkjeinek visszatöltése ({FAILED_LINKS_NAME})",
+        on_click=load_failed_links,
+    )
+    refresh_retry_button()
 
     AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".mp4"}
 
@@ -768,9 +840,7 @@ def main(page: ft.Page):
         files_tags_container.visible = bool(selected_files)
         has_audio = any(f.suffix.lower() in AUDIO_EXTENSIONS for f in selected_files)
         has_media_link = any(
-            is_media_site(ln.strip()) or is_youtube_url(ln.strip())
-            for ln in (links_field.value or "").splitlines()
-            if ln.strip() and not ln.strip().startswith("#")
+            is_media_site(ln) or is_youtube_url(ln) for ln in parse_link_list(links_field.value or "")
         )
         audio_settings_row.visible = has_audio or has_media_link
         update_eta()
@@ -897,6 +967,14 @@ def main(page: ft.Page):
         except Exception:
             pass
 
+    def note_outdated(ex: Exception):
+        if flag_update_if_outdated(ex):
+            log(
+                "↻  A hiba elavult letöltőre utal – a következő indításkor "
+                "(start_makethemd.bat) automatikusan frissítem a yt-dlp-t.",
+                YELLOW,
+            )
+
     def run_whisper_batch(items: list[dict], lang, model):
         """A kijelölt (felirat nélküli) videók hangját letölti és Whisperrel átírja."""
         spinner.visible = True
@@ -941,6 +1019,7 @@ def main(page: ft.Page):
                     out_text = f"{header}\n### Transcript\n{whisper_transcript_body(out_text)}\n"
                 out_path = cand["out_path"]
                 out_path.write_text(out_text, encoding="utf-8")
+                record_link_result(out_path.parent, cand["url"])
                 status_log.controls.remove(live)
                 log(f"✓  [{i}/{n}]  {title}  →  {out_path.name} [whisper]", GREEN)
                 ok += 1
@@ -949,12 +1028,15 @@ def main(page: ft.Page):
                     status_log.controls.remove(live)
                 except ValueError:
                     pass
+                record_link_result(cand["out_path"].parent, cand["url"], f"Whisper: {ex}")
                 log(f"✗  [{i}/{n}]  {title}: {ex}", RED)
+                note_outdated(ex)
                 errs += 1
             finally:
                 shutil.rmtree(tmpdir, ignore_errors=True)
 
         spinner.visible = False
+        refresh_retry_button()
         log(f"\nWhisper-átírás kész: {ok} sikeres, {errs} hiba", RED if errs else CYAN)
         notify_done(errs)
 
@@ -1068,6 +1150,35 @@ def main(page: ft.Page):
             skipped = 0
             # felirat nélkül maradt videók – a batch végén Whisper-átírást ajánlunk fel rájuk
             whisper_candidates: list[dict] = []
+            # az első IP-tiltás után a további YouTube-linkeket már le sem kérjük (elhalasztjuk)
+            youtube_blocked = False
+            deferred = 0
+            _yt_last: list[float | None] = [None]
+
+            def youtube_pause(url: str, progress_fn) -> None:
+                """Két YouTube-lekérés között kivárja a YOUTUBE_PAUSE_S szünetet."""
+                if not is_youtube_url(url) or _yt_last[0] is None:
+                    return
+                wait = YOUTUBE_PAUSE_S - (time.monotonic() - _yt_last[0])
+                if wait > 0:
+                    progress_fn(f"szünet a YouTube-kérések között ({int(wait) + 1} mp)...")
+                    time.sleep(wait)
+
+            def youtube_done(url: str) -> None:
+                if is_youtube_url(url):
+                    _yt_last[0] = time.monotonic()
+
+            def note_youtube_block(ex: Exception) -> bool:
+                """True, ha ez az első tiltás a futásban (ilyenkor egyszer figyelmeztetünk)."""
+                if not (isinstance(ex, TranscriptMissingError) and ex.blocked) or youtube_blocked:
+                    return False
+                log(
+                    "⏸  A YouTube letiltotta a felirat-kéréseket – a lista további YouTube-linkjeit "
+                    "most nem kérem le, hogy ne hosszabbodjon a tiltás. Elhalasztva, később "
+                    "az „Újrapróbálás” gombbal folytathatod.",
+                    YELLOW,
+                )
+                return True
 
             for path in selected_files:
                 out_path = out_dir / (path.stem + ".md")
@@ -1167,31 +1278,42 @@ def main(page: ft.Page):
                     try:
                         out_text, method = convert_link(md, url_value, lang, model, _on_url_progress)
                         resolved_path.write_text(out_text, encoding="utf-8")
+                        record_link_result(out_dir, url_value)
                         log(f"✓  URL  →  {resolved_path.name}{method}", GREEN)
                         converted += 1
                     except Exception as ex:
                         if isinstance(ex, TranscriptMissingError) and ex.candidate:
                             whisper_candidates.append({**ex.candidate, "out_path": resolved_path})
+                        record_link_result(out_dir, url_value, str(ex))
                         log(f"✗  URL: {ex}", RED)
+                        note_outdated(ex)
                         errors += 1
+                        youtube_blocked = note_youtube_block(ex) or youtube_blocked
                     finally:
+                        youtube_done(url_value)
                         status_log.controls.remove(live_url)
                         safe_update()
 
-            link_list = [ln.strip() for ln in (links_field.value or "").splitlines()]
-            link_list = [ln for ln in link_list if ln and not ln.startswith("#")]
+            # ugyanaz a videó többször a listában (pl. &t= vagy &list= eltéréssel) → csak egyszer
+            all_links = parse_link_list(links_field.value or "")
+            link_list: list[str] = []
+            seen: set[str] = set()
+            for ln in all_links:
+                if url_to_basename(ln) not in seen:
+                    seen.add(url_to_basename(ln))
+                    link_list.append(ln)
+            duplicates = len(all_links) - len(link_list)
+            if duplicates:
+                log(f"⏭  {duplicates} ismétlődő link a listában – mindegyiket csak egyszer dolgozom fel.", FG_DIM)
+                skipped += duplicates
             n_links = len(link_list)
-
-            def _already_converted(name: str, url: str) -> bool:
-                paths = [out_dir / f"{name}.md", *out_dir.glob(f"???_{name}.md")]
-                return any(path.exists() and (not is_facebook_url(url) or output_has_transcript(path))
-                           for path in paths)
 
             for i, url in enumerate(link_list, 1):
                 short = url if len(url) <= 55 else url[:54] + "…"
                 basename = url_to_basename(url)
 
-                if _already_converted(basename, url):
+                if already_converted(out_dir, url):
+                    record_link_result(out_dir, url)
                     log(f"⏭  [{i}/{n_links}]  {short}  (már megvan, kihagyva)", FG_DIM)
                     skipped += 1
                     continue
@@ -1203,6 +1325,15 @@ def main(page: ft.Page):
                     skipped += 1
                     continue
                 out_path = resolved_path
+
+                if youtube_blocked and is_youtube_url(url):
+                    # metaadat-lekérés nélkül (az is YouTube-kérés lenne): cím helyett az URL látszik
+                    whisper_candidates.append({"url": url, "title": url, "duration": None, "out_path": out_path})
+                    record_link_result(out_dir, url, "elhalasztva: a YouTube ebben a futásban letiltotta "
+                                                     "a felirat-kéréseket")
+                    log(f"⏸  [{i}/{n_links}]  {short}  (YouTube-tiltás miatt elhalasztva)", YELLOW)
+                    deferred += 1
+                    continue
 
                 live = ft.Text(f"⏳  [{i}/{n_links}]  {short}", size=13, color=FG_DIM, font_family="monospace")
                 status_log.controls.append(live)
@@ -1222,8 +1353,10 @@ def main(page: ft.Page):
                             pass
 
                 try:
+                    youtube_pause(url, _on_link_progress)
                     out_text, method = convert_link(md, url, lang, model, _on_link_progress)
                     out_path.write_text(out_text, encoding="utf-8")
+                    record_link_result(out_dir, url)
                     status_log.controls.remove(live)
                     log(f"✓  [{i}/{n_links}]  {short}  →  {out_path.name}{method}", GREEN)
                     converted += 1
@@ -1234,16 +1367,23 @@ def main(page: ft.Page):
                         pass
                     if isinstance(ex, TranscriptMissingError) and ex.candidate:
                         whisper_candidates.append({**ex.candidate, "out_path": out_path})
+                    record_link_result(out_dir, url, str(ex))
                     log(f"✗  [{i}/{n_links}]  {short}: {ex}", RED)
+                    note_outdated(ex)
                     errors += 1
+                    youtube_blocked = note_youtube_block(ex) or youtube_blocked
+                finally:
+                    youtube_done(url)
             spinner.visible = False
-            if converted == 0 and errors == 0 and skipped == 0:
+            refresh_retry_button()
+            if converted == 0 and errors == 0 and skipped == 0 and deferred == 0:
                 log("Nincs kiválasztott fájl vagy URL.", YELLOW)
             else:
                 skip_str = f", {skipped} kihagyva" if skipped else ""
-                summary_color = RED if errors else CYAN
+                defer_str = f", {deferred} elhalasztva" if deferred else ""
+                summary_color = RED if errors else YELLOW if deferred else CYAN
                 log(
-                    f"\nKész: {converted} sikeres, {errors} hiba{skip_str}  →  {out_dir}",
+                    f"\nKész: {converted} sikeres, {errors} hiba{defer_str}{skip_str}  →  {out_dir}",
                     summary_color,
                 )
                 if errors:
@@ -1252,7 +1392,15 @@ def main(page: ft.Page):
                         "ezekhez nem jött létre valós átirat.",
                         RED,
                     )
-                notify_done(errors)
+                if errors or deferred:
+                    failed_count = len(read_failed_links(out_dir))
+                    if failed_count:
+                        log(
+                            f"↻  {failed_count} sikertelen link elmentve: {out_dir / FAILED_LINKS_NAME}\n"
+                            "   Később az „Újrapróbálás” gombbal visszatöltheted őket.",
+                            YELLOW,
+                        )
+                notify_done(errors + deferred)
                 if whisper_candidates:
                     offer_whisper_retry(whisper_candidates, lang, model)
 
@@ -1376,7 +1524,7 @@ def main(page: ft.Page):
     copy_label = ft.Text("", size=11, color=GREEN)
 
     output_path_label = ft.Text(
-        str(OUTPUT),
+        str(current_output[0]),
         size=11,
         color=FG_DIM,
         expand=True,
@@ -1389,8 +1537,10 @@ def main(page: ft.Page):
         if folder:
             folder.mkdir(parents=True, exist_ok=True)
             current_output[0] = folder
+            save_settings(output_dir=str(folder))
             output_path_label.value = str(folder)
-            page.update()
+            refresh_retry_button()
+            update_link_count()
 
     spinner = ft.ProgressRing(
         width=20, height=20,
@@ -1443,6 +1593,7 @@ def main(page: ft.Page):
                 style=btn_style,
                 on_click=clear_links,
             ),
+            retry_btn,
             link_count_label,
         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ft.Row([links_field]),

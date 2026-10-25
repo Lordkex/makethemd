@@ -173,6 +173,9 @@ src/.DS_Store
 .DS_Store
 .cursorrules
 
+# Helyi felhasználói beállítások (pl. utolsó kimeneti mappa)
+settings.json
+
 # Mappa struktúra igen, tartalom nem
 output/*
 !output/.gitkeep

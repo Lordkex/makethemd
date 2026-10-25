@@ -6,10 +6,13 @@ echo Starting MakeThemd...
 
 where py >nul 2>nul
 if not errorlevel 1 (
+    rem letolto-csomagok heti frissitese; hiba eseten is indul az app
+    py -3 "%~dp0updater.py"
     py -3 "%~dp0app.py"
 ) else (
     where python >nul 2>nul
     if not errorlevel 1 (
+        python "%~dp0updater.py"
         python "%~dp0app.py"
     ) else (
         echo.

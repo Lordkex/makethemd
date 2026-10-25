@@ -16,11 +16,14 @@ try:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=SyntaxWarning)
         # Patch submitted upstream to fix the SyntaxWarning
-        from youtube_transcript_api import YouTubeTranscriptApi
+        from youtube_transcript_api import RequestBlocked, YouTubeTranscriptApi
 
     IS_YOUTUBE_TRANSCRIPT_CAPABLE = True
 except ModuleNotFoundError:
     IS_YOUTUBE_TRANSCRIPT_CAPABLE = False
+
+    class RequestBlocked(Exception):  # type: ignore[no-redef]
+        pass
 
 
 ACCEPTED_MIME_TYPE_PREFIXES = [
@@ -173,6 +176,9 @@ class YouTubeConverter(DocumentConverter):
                         transcript_text = " ".join(
                             [part.text for part in transcript]
                         )  # type: ignore
+                except RequestBlocked:
+                    # IP-blokk: a fordítás újabb kérés lenne, és csak meghosszabbítaná a tiltást
+                    raise
                 except Exception as e:
                     # No transcript available
                     if len(languages) == 1:
@@ -229,6 +235,8 @@ class YouTubeConverter(DocumentConverter):
         while attempt < retries:
             try:
                 return operation()  # Attempt the operation
+            except RequestBlocked:
+                raise  # blokkolt IP-nél az újrapróbálás csak ront a helyzeten
             except Exception as e:
                 print(f"Attempt {attempt + 1} failed: {e}")
                 if attempt < retries - 1:

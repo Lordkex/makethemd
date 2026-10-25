@@ -52,7 +52,7 @@ openai-whisper
 youtube-transcript-api==1.2.4
 
 # Videó-linkek (TikTok, Facebook, Instagram, X) – hang letöltése Whisper-átíráshoz
-yt-dlp
+yt-dlp[default]  # a [default] hozza a yt-dlp-ejs-t (YouTube JS-kihívás)
 
 # GUI
 flet==0.85.3
