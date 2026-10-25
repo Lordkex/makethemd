@@ -790,6 +790,7 @@ def main(page: ft.Page):
         "Újrapróbálás",
         icon=ft.Icons.REPLAY,
         style=btn_style,
+        height=40,
         tooltip=f"A kimeneti mappa korábban sikertelen linkjeinek visszatöltése ({FAILED_LINKS_NAME})",
         on_click=load_failed_links,
     )
@@ -930,7 +931,7 @@ def main(page: ft.Page):
 
     def resize_window():
         n = sum(1 for f in selected_files if f.suffix.lower() in AUDIO_EXTENSIONS)
-        # 860 alap (nincs audio sor); +80 a settings+ETA sornak, +28 minden további fájlhoz
+        # 900 alap (nincs audio sor); +80 a settings+ETA sornak, +28 minden további fájlhoz
         page.window.height = 900 if n == 0 else min(980 + (n - 1) * 28, 1080)
         page.update()
 
@@ -1547,7 +1548,7 @@ def main(page: ft.Page):
     copy_label = ft.Text("", size=12, color=GREEN)
 
     output_path_label = ft.Text(
-        str(OUTPUT),
+        str(current_output[0]),
         size=14,
         color=FG_DIM,
         expand=True,
@@ -1601,6 +1602,7 @@ def main(page: ft.Page):
         ft.Row([
             mk_btn("Linklista (.txt) betöltése", ft.Icons.PLAYLIST_ADD, load_links),
             mk_btn("Linkek törlése", ft.Icons.CLEAR_ALL, clear_links),
+            retry_btn,
         ], spacing=12),
         ft.Row([links_field]),
     )
