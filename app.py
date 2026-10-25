@@ -39,7 +39,8 @@ OUTPUT.mkdir(exist_ok=True)
 
 # Monokai Ristretto
 BG       = "#2c2525"   # fő háttér
-BG_DARK  = "#211c1c"   # mélyebb háttér (konténerek)
+BG_DARK  = "#211c1c"   # mélyebb háttér (mezők, napló)
+SURFACE  = "#332b2b"   # kártyák háttere (BG és BG_DARK között)
 BORDER   = "#403838"   # keret, elválasztó
 FG       = "#fce2be"   # szöveg, elsődleges szín
 FG_DIM   = "#a89080"   # halványabb szöveg
@@ -578,9 +579,11 @@ def convert_link(md, url: str, lang: str | None, model: str = "turbo", progress_
 def main(page: ft.Page):
     page.title = "MakeThemd"
     page.window.width = 770
-    page.window.height = 860
+    page.window.height = 900
     page.bgcolor = BG
     page.padding = 24
+    page.spacing = 16
+    page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
 
     md = MarkItDown()
     selected_files: list[Path] = []
@@ -594,20 +597,40 @@ def main(page: ft.Page):
         bottom=ft.BorderSide(1, BORDER),
     )
 
+    # Betűméretek: 12 (címke, súgó) · 14 (törzs, gomb) · 18 (cím). Naplósor: 13 monospace.
+    # Vezérlők magassága: 40 (gomb, mező) · 48 (Konvertálás).
     btn_style = ft.ButtonStyle(
-        bgcolor=BG_DARK,
+        bgcolor=BG,
         color=FG,
-        side=ft.BorderSide(1, BORDER),
-        shape=ft.RoundedRectangleBorder(radius=6),
-        padding=ft.Padding(left=16, right=16, top=10, bottom=10),
+        side=ft.BorderSide(1, "#6b5f5a"),
+        shape=ft.RoundedRectangleBorder(radius=10),
+        padding=ft.Padding(left=16, right=16, top=0, bottom=0),
+        text_style=ft.TextStyle(size=14, weight=ft.FontWeight.W_600),
     )
 
     convert_btn_style = ft.ButtonStyle(
-        bgcolor=BORDER,
-        color=FG,
-        shape=ft.RoundedRectangleBorder(radius=6),
-        padding=ft.Padding(left=32, right=32, top=14, bottom=14),
+        bgcolor=CYAN,
+        color=BG_DARK,
+        shape=ft.RoundedRectangleBorder(radius=10),
+        padding=ft.Padding(left=28, right=28, top=0, bottom=0),
+        text_style=ft.TextStyle(size=15, weight=ft.FontWeight.W_700),
     )
+
+    def mk_btn(label: str, icon, on_click, style=None, height: int = 40) -> ft.Button:
+        return ft.Button(label, icon=icon, style=style or btn_style, on_click=on_click, height=height)
+
+    def section_label(text: str) -> ft.Text:
+        return ft.Text(text.upper(), size=12, weight=ft.FontWeight.W_600, color=FG_DIM)
+
+    def card(*controls: ft.Control) -> ft.Container:
+        return ft.Container(
+            content=ft.Column(list(controls), spacing=16,
+                              horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
+            bgcolor=SURFACE,
+            border=border_style,
+            border_radius=14,
+            padding=20,
+        )
 
     status_log = ft.ListView(expand=True, spacing=4, auto_scroll=True)
 
@@ -675,16 +698,16 @@ def main(page: ft.Page):
     )
 
     url_field = ft.TextField(
-        label="Video / Page URL",
-        hint_text="https://www.youtube.com/watch?v=... or https://www.tiktok.com/... or https://www.instagram.com/...",
+        hint_text="Videó vagy oldal URL-je, pl. https://www.youtube.com/watch?v=…",
         expand=True,
-        border_radius=6,
+        border_radius=10,
         bgcolor=BG_DARK,
-        border_color=BORDER,
-        focused_border_color=FG,
+        border_color="#6b5f5a",
+        focused_border_color=CYAN,
         color=FG,
-        label_style=ft.TextStyle(color=FG_DIM),
-        hint_style=ft.TextStyle(color=FG_DIM),
+        text_size=14,
+        content_padding=ft.Padding(left=16, right=16, top=14, bottom=14),
+        hint_style=ft.TextStyle(color="#968b85", size=14),
         cursor_color=FG,
         on_change=lambda _e: update_link_count(),
     )
@@ -692,11 +715,11 @@ def main(page: ft.Page):
     ocr_checkbox = ft.Checkbox(
         label="OCR képekből helyileg",
         value=False,
-        active_color=GREEN,
+        active_color=CYAN,
         check_color=BG_DARK,
-        label_style=ft.TextStyle(color=FG),
+        label_style=ft.TextStyle(color=FG, size=14),
     )
-    link_count_label = ft.Text("", size=11, color=FG_DIM)
+    link_count_label = ft.Text("", size=12, color=FG_DIM)
 
     def update_link_count(_e=None):
         active = parse_link_list(links_field.value or "")
@@ -711,19 +734,19 @@ def main(page: ft.Page):
         page.update()
 
     links_field = ft.TextField(
-        label="Linklista (soronként egy URL)",
-        hint_text="https://pelda.hu/cikk\nhttps://masik.hu/oldal",
+        hint_text="Soronként egy URL, pl.\nhttps://pelda.hu/cikk\nhttps://masik.hu/oldal",
         multiline=True,
         min_lines=3,
         max_lines=6,
         expand=True,
-        border_radius=6,
+        border_radius=10,
         bgcolor=BG_DARK,
-        border_color=BORDER,
-        focused_border_color=FG,
+        border_color="#6b5f5a",
+        focused_border_color=CYAN,
         color=FG,
-        label_style=ft.TextStyle(color=FG_DIM),
-        hint_style=ft.TextStyle(color=FG_DIM),
+        text_size=14,
+        content_padding=ft.Padding(left=16, right=16, top=14, bottom=14),
+        hint_style=ft.TextStyle(color="#968b85", size=14),
         cursor_color=FG,
         on_change=update_link_count,
     )
@@ -908,7 +931,7 @@ def main(page: ft.Page):
     def resize_window():
         n = sum(1 for f in selected_files if f.suffix.lower() in AUDIO_EXTENSIONS)
         # 860 alap (nincs audio sor); +80 a settings+ETA sornak, +28 minden további fájlhoz
-        page.window.height = 860 if n == 0 else min(940 + (n - 1) * 28, 1050)
+        page.window.height = 900 if n == 0 else min(980 + (n - 1) * 28, 1080)
         page.update()
 
     def update_eta(_e=None):
@@ -1521,11 +1544,11 @@ def main(page: ft.Page):
     ], spacing=8, height=48, scroll=ft.ScrollMode.AUTO,
        vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
-    copy_label = ft.Text("", size=11, color=GREEN)
+    copy_label = ft.Text("", size=12, color=GREEN)
 
     output_path_label = ft.Text(
-        str(current_output[0]),
-        size=11,
+        str(OUTPUT),
+        size=14,
         color=FG_DIM,
         expand=True,
         no_wrap=True,
@@ -1558,88 +1581,91 @@ def main(page: ft.Page):
         copy_label.value = "kimásolva vágólapra"
         page.update()
 
-    page.add(
-        platforms_row,
+    # ── Elrendezés: fejléc → Források → Beállítások → Konvertálás → napló ──────
+    sources_card = card(
+        section_label("Fájlok"),
         ft.Row([
-            ft.Button(
-                "Fájl(ok) kiválasztása",
-                icon=ft.Icons.UPLOAD_FILE,
-                style=btn_style,
-                on_click=pick_files,
-            ),
-            ft.Button(
-                "Törlés",
-                icon=ft.Icons.DELETE_OUTLINE,
-                style=btn_style,
-                on_click=clear_files,
-            ),
-            ft.Container(expand=True),
-            ocr_checkbox,
-        ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            mk_btn("Fájlok kiválasztása", ft.Icons.UPLOAD_FILE, pick_files),
+            mk_btn("Fájlok törlése", ft.Icons.DELETE_OUTLINE, clear_files),
+        ], spacing=12),
         files_tags_container,
+        ft.Divider(height=1, color=BORDER),
+        section_label("Link"),
+        ft.Row([url_field]),
+        ft.Divider(height=1, color=BORDER),
+        ft.Row([
+            section_label("Linklista"),
+            ft.Container(expand=True),
+            link_count_label,
+        ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        ft.Row([
+            mk_btn("Linklista (.txt) betöltése", ft.Icons.PLAYLIST_ADD, load_links),
+            mk_btn("Linkek törlése", ft.Icons.CLEAR_ALL, clear_links),
+        ], spacing=12),
+        ft.Row([links_field]),
+    )
+
+    output_row = ft.Container(
+        content=ft.Row([
+            ft.Icon(ft.Icons.FOLDER_OPEN, size=18, color=FG_DIM),
+            output_path_label,
+            mk_btn("Kimenet mappa", ft.Icons.DRIVE_FOLDER_UPLOAD, browse_output),
+        ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        bgcolor=BG_DARK,
+        border=border_style,
+        border_radius=10,
+        padding=ft.Padding(left=16, right=4, top=4, bottom=4),
+    )
+
+    settings_card = card(
+        section_label("Kimenet és beállítások"),
+        output_row,
+        ocr_checkbox,
         audio_settings_row,
         eta_container,
-        ft.Row([url_field]),
-        ft.Row([
-            ft.Button(
-                "Linklista (.txt) betöltése",
-                icon=ft.Icons.PLAYLIST_ADD,
-                style=btn_style,
-                on_click=load_links,
-            ),
-            ft.Button(
-                "Linkek törlése",
-                icon=ft.Icons.CLEAR_ALL,
-                style=btn_style,
-                on_click=clear_links,
-            ),
-            retry_btn,
-            link_count_label,
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ft.Row([links_field]),
+    )
 
-        ft.Divider(height=8, color=BORDER),
-        ft.Row([
-            ft.Icon(ft.Icons.FOLDER_OPEN, size=16, color=FG_DIM),
-            output_path_label,
-            ft.Button(
-                "Kimenet mappa",
-                icon=ft.Icons.DRIVE_FOLDER_UPLOAD,
-                style=btn_style,
-                on_click=browse_output,
-            ),
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ft.Row([
-            ft.Button(
-                "Konvertálás",
-                icon=ft.Icons.PLAY_ARROW,
-                style=convert_btn_style,
-                on_click=convert,
-            ),
-            spinner,
-        ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+    convert_row = ft.Row([
+        ft.Container(expand=True),
+        spinner,
+        mk_btn("Konvertálás", ft.Icons.PLAY_ARROW, convert, style=convert_btn_style, height=48),
+    ], spacing=16, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
-        ft.Divider(height=8, color=BORDER),
-        ft.Row([
-            ft.Text("console", size=14, weight=ft.FontWeight.W_600, color=FG_DIM),
-            ft.IconButton(
-                icon=ft.Icons.CONTENT_COPY,
-                icon_size=15,
-                icon_color=FG_DIM,
-                tooltip="Másolás vágólapra",
-                style=ft.ButtonStyle(padding=ft.Padding(4, 4, 4, 4)),
-                on_click=lambda e: copy_log(),
+    console_box = ft.Container(
+        content=ft.Column([
+            ft.Container(
+                content=ft.Row([
+                    section_label("Napló"),
+                    ft.Row([
+                        copy_label,
+                        ft.IconButton(
+                            icon=ft.Icons.CONTENT_COPY,
+                            icon_size=16,
+                            icon_color=FG_DIM,
+                            tooltip="Másolás vágólapra",
+                            style=ft.ButtonStyle(padding=ft.Padding(6, 6, 6, 6)),
+                            on_click=lambda e: copy_log(),
+                        ),
+                    ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.Padding(left=16, right=8, top=4, bottom=4),
+                border=ft.Border(bottom=ft.BorderSide(1, BORDER)),
             ),
-            copy_label,
-        ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ft.Container(
-            content=status_log,
-            bgcolor=BG_DARK,
-            border=border_style,
-            border_radius=6,
-            padding=10,
-            expand=True,
-        ),
+            ft.Container(content=status_log, padding=16, expand=True),
+        ], spacing=0, expand=True),
+        bgcolor=BG_DARK,
+        border=border_style,
+        border_radius=14,
+        expand=True,
+    )
+
+    page.add(
+        platforms_row,
+        sources_card,
+        settings_card,
+        convert_row,
+        console_box,
     )
 
 
