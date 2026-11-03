@@ -4,7 +4,8 @@ from pathlib import Path
 
 import app
 from output_utils import (
-    FAILED_LINKS_NAME, read_failed_links, record_link_result, save_settings, saved_output_dir,
+    FAILED_LINKS_NAME, LEGACY_FAILED_LINKS_NAME, read_failed_links, record_link_result,
+    save_settings, saved_output_dir,
 )
 
 
@@ -42,6 +43,16 @@ class FailedLinksTests(unittest.TestCase):
         self.assertEqual(read_failed_links(self.out_dir), {})
         record_link_result(self.out_dir, URL_A)  # sikeres, listán sem volt: nem hoz létre fájlt
         self.assertFalse((self.out_dir / FAILED_LINKS_NAME).exists())
+
+    def test_legacy_list_is_read_and_moved_to_new_name(self):
+        legacy = self.out_dir / LEGACY_FAILED_LINKS_NAME
+        legacy.write_text(f"# régi hiba\n{URL_A}\n\n# másik\n{URL_B}\n", encoding="utf-8")
+        self.assertEqual(list(read_failed_links(self.out_dir)), [URL_A, URL_B])
+
+        record_link_result(self.out_dir, URL_A)
+        self.assertFalse(legacy.exists())
+        self.assertEqual(list(read_failed_links(self.out_dir)), [URL_B])
+        self.assertTrue((self.out_dir / FAILED_LINKS_NAME).exists())
 
     def test_already_converted_matches_existing_output(self):
         self.assertFalse(app.already_converted(self.out_dir, URL_A))

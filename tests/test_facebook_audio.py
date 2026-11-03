@@ -8,6 +8,11 @@ import requests
 
 import app
 import facebook_audio
+from i18n import set_language
+
+
+def setUpModule():
+    set_language("hu")  # a hibaüzenet-ellenőrzések a magyar szövegekre épülnek
 
 
 URL = "https://www.facebook.com/reel/1633195638310204"
@@ -60,6 +65,15 @@ class FacebookFlowTests(unittest.TestCase):
         self.assertIn(URL, text)
         self.assertIn("The spoken words.", text)
         self.assertEqual(converter.convert.call_args.kwargs["whisper_model"], "small")
+
+    def test_instagram_skips_caption_lookup(self):
+        converter = MagicMock()
+        converter.convert.return_value = SimpleNamespace(text_content=TRANSCRIPT)
+        with patch.object(app, "fetch_media_captions") as captions, \
+             patch.object(app, "download_media_audio", return_value=Path("audio.mp4")):
+            _text, method = app.convert_link(converter, "https://www.instagram.com/reel/abc/", None)
+        captions.assert_not_called()
+        self.assertEqual(method, " [whisper]")
 
     def test_missing_audio_transcript_is_an_error(self):
         converter = MagicMock()

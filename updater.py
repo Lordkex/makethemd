@@ -17,7 +17,8 @@ import urllib.request
 from datetime import datetime, timedelta
 from importlib import metadata
 
-from output_utils import load_settings, save_settings
+from i18n import t
+from output_utils import apply_saved_language, load_settings, save_settings
 
 # pip-név → PyPI-név (a [default] hozza a yt-dlp-ejs-t a YouTube JS-kihívásához)
 PACKAGES = {"yt-dlp": "yt-dlp[default]", "yt-dlp-ejs": "yt-dlp-ejs", "youtube-transcript-api": "youtube-transcript-api"}
@@ -61,6 +62,7 @@ def works() -> bool:
 
 
 def main() -> None:
+    apply_saved_language()
     settings = load_settings()
     now = datetime.now()
     if not is_due(settings, now):
@@ -73,7 +75,7 @@ def main() -> None:
             and installed_version(name) != latest_version(name)
         ]
     except Exception:
-        print("Frissítés-ellenőrzés kihagyva (nincs internet vagy nem érhető el a PyPI).")
+        print(t("upd_skipped"))
         return  # nem jegyezzük fel: a következő indításkor újra próbálja
 
     if not outdated and installed_version("yt-dlp-ejs"):
@@ -81,20 +83,20 @@ def main() -> None:
         return
 
     before = {name: installed_version(name) for name in PACKAGES}
-    print("Letöltő-csomagok frissítése: " + ", ".join(outdated or ["yt-dlp-ejs"]) + " ...")
+    print(t("upd_updating", names=", ".join(outdated or ["yt-dlp-ejs"])))
     ok = pip_install("--upgrade", "--upgrade-strategy", "only-if-needed",
                      *(PACKAGES[name] for name in outdated or ["yt-dlp"]))
 
     if ok and works():
         after = ", ".join(f"{n} {installed_version(n)}" for n in PACKAGES)
-        print(f"Kész: {after}")
+        print(t("upd_done", versions=after))
     else:
         restore = [f"{name}=={ver}" for name, ver in before.items() if ver]
-        print("A frissített csomag nem működik, visszaállítom az előző verziót: " + ", ".join(restore))
+        print(t("upd_broken", versions=", ".join(restore)))
         if restore and pip_install(*restore) and works():
-            print("Visszaállítva, az előző verzióval indul az app.")
+            print(t("upd_restored"))
         else:
-            print("A visszaállítás sem sikerült. Kézzel: py -3 -m pip install -U \"yt-dlp[default]\"")
+            print(t("upd_restore_failed"))
     save_settings(last_update_check=now.isoformat(timespec="seconds"), force_update=False)
 
 

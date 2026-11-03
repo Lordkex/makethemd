@@ -23,11 +23,14 @@ if FFMPEG_BIN not in os.environ["PATH"]:
 import flet as ft
 from markitdown import MarkItDown
 from facebook_audio import convert_to_mp3, download_facebook_audio, is_facebook_url
+from i18n import LANGUAGES, get_language, set_language, t, tn
 from output_utils import (
-    FAILED_LINKS_NAME, choose_output_path, read_failed_links, record_link_result,
-    load_settings, save_settings, saved_output_dir,
+    FAILED_LINKS_NAME, apply_saved_language, choose_output_path, read_failed_links,
+    record_link_result, load_settings, save_settings, saved_output_dir,
 )
 from paddleocr_tools.ocr_utils import append_image_ocr, check_ocr_environment
+
+apply_saved_language()
 
 # Importok után állítjuk be, hogy a pdfminer saját setLevel-jeit felülírjuk
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
@@ -49,18 +52,19 @@ RED      = "#f26d78"
 YELLOW   = "#e8b057"
 CYAN     = "#7fd8b4"
 
-FILETYPES = [
-    ("Minden támogatott", "*.pdf *.docx *.doc *.xlsx *.xls *.pptx *.html *.htm "
-                          "*.csv *.json *.xml *.epub *.ipynb *.msg "
-                          "*.azw3 *.mobi *.fb2 "
-                          "*.png *.jpg *.jpeg *.gif *.bmp *.webp "
-                          "*.mp3 *.wav *.m4a *.zip"),
-    ("PDF", "*.pdf"),
-    ("Word", "*.docx *.doc"),
-    ("Excel", "*.xlsx *.xls"),
-    ("PowerPoint", "*.pptx"),
-    ("Ebook", "*.azw3 *.mobi *.fb2"),
-]
+def filetypes() -> list[tuple[str, str]]:
+    return [
+        (t("ft_all_supported"), "*.pdf *.docx *.doc *.xlsx *.xls *.pptx *.html *.htm "
+                                "*.csv *.json *.xml *.epub *.ipynb *.msg "
+                                "*.azw3 *.mobi *.fb2 "
+                                "*.png *.jpg *.jpeg *.gif *.bmp *.webp "
+                                "*.mp3 *.wav *.m4a *.zip"),
+        ("PDF", "*.pdf"),
+        ("Word", "*.docx *.doc"),
+        ("Excel", "*.xlsx *.xls"),
+        ("PowerPoint", "*.pptx"),
+        (t("ft_ebook"), "*.azw3 *.mobi *.fb2"),
+    ]
 
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a"}
 
@@ -72,7 +76,7 @@ def open_file_dialog() -> list[Path]:
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
-        paths = filedialog.askopenfilenames(filetypes=FILETYPES, title="Fájl kiválasztása")
+        paths = filedialog.askopenfilenames(filetypes=filetypes(), title=t("dlg_pick_files"))
         root.destroy()
         result.extend(Path(p) for p in paths)
 
@@ -89,7 +93,7 @@ def open_folder_dialog() -> Path | None:
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
-        path = filedialog.askdirectory(title="Kimeneti mappa kiválasztása")
+        path = filedialog.askdirectory(title=t("dlg_output_folder"))
         root.destroy()
         if path:
             result.append(Path(path))
@@ -108,8 +112,8 @@ def open_txt_dialog() -> Path | None:
         root.withdraw()
         root.attributes("-topmost", True)
         path = filedialog.askopenfilename(
-            filetypes=[("Szövegfájl", "*.txt"), ("Minden fájl", "*.*")],
-            title="Linklista kiválasztása",
+            filetypes=[(t("ft_text_file"), "*.txt"), (t("ft_all_files"), "*.*")],
+            title=t("dlg_link_list"),
         )
         root.destroy()
         if path:
@@ -136,6 +140,41 @@ YT_DLP_SITES = (
 def is_media_site(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     return any(host == site or host.endswith("." + site) for site in YT_DLP_SITES)
+
+
+def has_caption_track(url: str) -> bool:
+    """Az Instagram nem ad ki feliratsávot, ott a felirat-lekérés csak egy felesleges kérés."""
+    host = (urlparse(url).hostname or "").lower()
+    return not (host == "instagram.com" or host.endswith(".instagram.com"))
+
+
+def screen_work_area() -> tuple[int, int, int, int] | None:
+    """A tálca nélküli képernyőterület (bal, felső, szélesség, magasság) Windowson, különben None."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        rect = wintypes.RECT()
+        if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):  # SPI_GETWORKAREA
+            return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+    except Exception:
+        pass
+    return None
+
+
+def invisible_bottom_border() -> int:
+    """A Windows-ablak alsó, láthatatlan átméretező kerete (100%-on 7 px).
+
+    Felül nincs ilyen, alul viszont enélkül rés maradna a tálca fölött. A keret
+    (SM_CYSIZEFRAME + SM_CXPADDEDBORDER) legkülső pixele a látható szegélyvonal.
+    """
+    try:
+        import ctypes
+
+        metrics = ctypes.windll.user32.GetSystemMetrics
+        return max(metrics(33) + metrics(92) - 1, 0)
+    except Exception:
+        return 0
 
 
 def has_real_transcript(text: str) -> bool:
@@ -264,11 +303,7 @@ def ensure_real_transcript(url: str, text: str) -> None:
         return
     info = probe_media_info(url)
     if info is None:
-        raise TranscriptMissingError(
-            "nem sikerült átiratot lekérni, és a videó adatai sem érhetők el. "
-            "Lehet, hogy a videó privát, törölt vagy korhatáros, esetleg a "
-            "YouTube átmenetileg blokkolja a kéréseket erről a hálózatról."
-        )
+        raise TranscriptMissingError(t("err_no_info"))
     candidate = {
         "url": url,
         "title": info.get("title") or url,
@@ -278,18 +313,8 @@ def ensure_real_transcript(url: str, text: str) -> None:
         "description": info.get("description") or "",
     }
     if not (info.get("subtitles") or info.get("automatic_captions")):
-        raise TranscriptMissingError(
-            "a videónak NINCS FELIRATA a YouTube-on (se kézi, se automatikus), "
-            "ezért nem készült átirat. Whisper-átírással viszont elkészíthető.",
-            candidate,
-        )
-    raise TranscriptMissingError(
-        "a videónak van felirata, de a YouTube felirat-API nem adta ki – "
-        "valószínűleg túl sok kérés miatt átmenetileg blokkolta az IP-címedet. "
-        "Válts hálózatot vagy várj néhány órát; a Whisper-átírás így is működik.",
-        candidate,
-        blocked=True,
-    )
+        raise TranscriptMissingError(t("err_no_captions"), candidate)
+    raise TranscriptMissingError(t("err_captions_blocked"), candidate, blocked=True)
 
 
 def url_to_basename(url: str) -> str:
@@ -352,7 +377,7 @@ def _download_media_with_ytdlp(url: str, tmpdir: str) -> Path:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
                 info = ydl.extract_info(url, download=True)
                 if not isinstance(info, dict):
-                    raise RuntimeError("A letöltő nem adott médiafájlt.")
+                    raise RuntimeError(t("err_no_media"))
                 filename = ydl.prepare_filename(info)
             break
         except Exception as ex:
@@ -368,7 +393,7 @@ def _download_media_with_ytdlp(url: str, tmpdir: str) -> Path:
     else:
         path = Path(info.get("filepath") or info.get("_filename") or filename)
     if not path.is_file() or path.stat().st_size == 0:
-        raise RuntimeError("A letöltött médiafájl nem található vagy üres.")
+        raise RuntimeError(t("err_media_missing"))
 
     # A markitdown csak .mp3/.m4a/.mp4/.wav kiterjesztést fogad el; a whisper/ffmpeg a
     # tényleges tartalom alapján dekódol, így a kiterjesztés átnevezése ártalmatlan.
@@ -386,12 +411,12 @@ def download_media_audio(url: str, tmpdir: str, progress_fn=None) -> Path:
     try:
         source = _download_media_with_ytdlp(url, tmpdir)
         if progress_fn:
-            progress_fn("Facebook-hangsáv átalakítása MP3-má...")
+            progress_fn(t("prog_fb_to_mp3"))
         return convert_to_mp3(source, Path(tmpdir) / "facebook_audio.mp3", FFMPEG_BIN)
     except Exception as ex:
         logging.getLogger(__name__).info("Facebook yt-dlp letöltés sikertelen: %s", ex)
         if progress_fn:
-            progress_fn("A közvetlen letöltés nem sikerült; ingyenes FDOWN tartalékletöltő indul...")
+            progress_fn(t("prog_fdown_fallback"))
         return download_facebook_audio(
             url, tmpdir, ffmpeg_location=FFMPEG_BIN, progress_fn=progress_fn,
         )
@@ -543,7 +568,7 @@ def convert_link(md, url: str, lang: str | None, model: str = "turbo", progress_
     facebook = is_facebook_url(url)
     header = ""
     if progress_fn:
-        progress_fn("Felirat keresése...")
+        progress_fn(t("prog_captions"))
     if facebook:
         try:
             header = md.convert(url).text_content
@@ -551,17 +576,17 @@ def convert_link(md, url: str, lang: str | None, model: str = "turbo", progress_
             pass  # A HTML-oldal hibája mellett a hang még letölthető lehet.
         if header.startswith("# Facebook\n"):
             if has_real_transcript(header):
-                return header, " [felirat]"
+                return header, " " + t("method_captions")
         else:
             header = f"# Facebook\n\n- **Source:** {url}\n"
 
-    captions = fetch_media_captions(url, lang)
+    captions = fetch_media_captions(url, lang) if has_caption_track(url) else None
     if captions:
-        text = f"{header.rstrip()}\n\n### Transcript\n{captions}\n" if facebook else "### Felirat:\n\n" + captions
-        return text, " [felirat]"
+        text = f"{header.rstrip()}\n\n### Transcript\n{captions}\n" if facebook else f"### Transcript\n{captions}\n"
+        return text, " " + t("method_captions")
 
     if progress_fn:
-        progress_fn("Nincs felirat, hang letöltése...")
+        progress_fn(t("prog_no_captions"))
     with tempfile.TemporaryDirectory(prefix="mtd_") as tmpdir:
         audio_path = download_media_audio(url, tmpdir, progress_fn=progress_fn)
         result = md.convert(
@@ -570,22 +595,30 @@ def convert_link(md, url: str, lang: str | None, model: str = "turbo", progress_
         )
         text = result.text_content
         if not has_real_transcript(text):
-            raise RuntimeError("A hangletöltés után nem készült átirat; a kimenet nem lett elmentve.")
+            raise RuntimeError(t("err_no_transcript"))
         if facebook:
             text = f"{header.rstrip()}\n\n### Transcript\n{whisper_transcript_body(text)}\n"
-        return text, " [whisper]"
+        return text, " " + t("method_whisper")
 
 
-def main(page: ft.Page):
+def main(page: ft.Page, restore: dict | None = None):
+    """A teljes felület; nyelvváltáskor `restore`-ral újraépül (fájlok, linkek, napló megmarad)."""
     page.title = "MakeThemd"
-    page.window.width = 770
-    page.window.height = 900
+    if not restore:
+        page.window.width = 770
+        # függőlegesen a képernyő tetejétől a tálcáig ér, így a napló is kifér
+        area = screen_work_area()
+        if area:
+            page.window.top = area[1]
+            page.window.height = area[3] + invisible_bottom_border()
+        else:
+            page.window.height = 900
     page.bgcolor = BG
     page.padding = 24
     page.spacing = 16
     page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
 
-    md = MarkItDown()
+    md = restore["md"] if restore else MarkItDown()
     selected_files: list[Path] = []
     # újraindítás után is az utoljára választott mappába ment (és ott keresi a kész fájlokat)
     current_output: list[Path] = [saved_output_dir(OUTPUT)]
@@ -640,16 +673,24 @@ def main(page: ft.Page):
         _device_name = _torch.cuda.get_device_name(0) if _cuda else "CPU"
     except ImportError:
         _cuda = False
-        _device_name = "CPU (whisper nincs telepítve)"
+        _device_name = t("device_no_whisper")
 
-    device_label = ft.Text(
-        f"{'CUDA  •  ' + _device_name if _cuda else 'CPU  •  ' + _device_name}",
-        size=11,
-        color=GREEN if _cuda else FG_DIM,
+    device_text = f"{'CUDA  •  ' + _device_name if _cuda else 'CPU  •  ' + _device_name}"
+    # a maradék helyet tölti ki; hosszú GPU-névnél „…”, a teljes név tooltipben
+    device_label = ft.Container(
+        content=ft.Text(
+            device_text,
+            size=11,
+            color=GREEN if _cuda else FG_DIM,
+            no_wrap=True,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        ),
+        expand=True,
+        tooltip=device_text,
     )
 
     language_dd = ft.Dropdown(
-        label="Nyelv (audio)",
+        label=t("audio_language"),
         value="hu",
         width=160,
         bgcolor=BG_DARK,
@@ -664,31 +705,22 @@ def main(page: ft.Page):
             ft.dropdown.Option("fr", "Français"),
             ft.dropdown.Option("es", "Español"),
             ft.dropdown.Option("ru", "Русский"),
-            ft.dropdown.Option(key="auto", text="Auto detect"),
+            ft.dropdown.Option(key="auto", text=t("auto_detect")),
         ],
     )
 
+    # a modellnevek oszlopba igazítva: "tiny   — …", "medium — …"
     if _cuda:
-        model_options = [
-            ft.dropdown.Option("tiny",   "tiny   — nagyon gyors, kevésbé pontos"),
-            ft.dropdown.Option("base",   "base   — gyors"),
-            ft.dropdown.Option("small",  "small  — közepes"),
-            ft.dropdown.Option("medium", "medium — lassabb, pontosabb"),
-            ft.dropdown.Option("turbo",  "turbo  — gyors és pontos (ajánlott)"),
-            ft.dropdown.Option("large",  "large  — leglassabb, legjobb minőség"),
-        ]
+        model_options = [ft.dropdown.Option(m, f"{m:<6} — {t(f'model_{m}_gpu')}")
+                         for m in ("tiny", "base", "small", "medium", "turbo", "large")]
     else:
-        model_options = [
-            ft.dropdown.Option("tiny",  "tiny  — nagyon gyors"),
-            ft.dropdown.Option("base",  "base  — gyors"),
-            ft.dropdown.Option("small", "small — lassabb, pontosabb"),
-            ft.dropdown.Option("turbo", "turbo — pontosabb, CPU-n lassabb"),
-        ]
+        model_options = [ft.dropdown.Option(m, f"{m:<5} — {t(f'model_{m}_cpu')}")
+                         for m in ("tiny", "base", "small", "turbo")]
 
     model_dd = ft.Dropdown(
-        label="Whisper modell",
+        label=t("whisper_model"),
         value="turbo",
-        width=280,
+        width=300,
         bgcolor=BG_DARK,
         border_color=BORDER,
         focused_border_color=FG,
@@ -697,23 +729,8 @@ def main(page: ft.Page):
         options=model_options,
     )
 
-    url_field = ft.TextField(
-        hint_text="Videó vagy oldal URL-je, pl. https://www.youtube.com/watch?v=…",
-        expand=True,
-        border_radius=10,
-        bgcolor=BG_DARK,
-        border_color="#6b5f5a",
-        focused_border_color=CYAN,
-        color=FG,
-        text_size=14,
-        content_padding=ft.Padding(left=16, right=16, top=14, bottom=14),
-        hint_style=ft.TextStyle(color="#968b85", size=14),
-        cursor_color=FG,
-        on_change=lambda _e: update_link_count(),
-    )
-
     ocr_checkbox = ft.Checkbox(
-        label="OCR képekből helyileg",
+        label=t("ocr_label"),
         value=False,
         active_color=CYAN,
         check_color=BG_DARK,
@@ -723,18 +740,15 @@ def main(page: ft.Page):
 
     def update_link_count(_e=None):
         active = parse_link_list(links_field.value or "")
-        link_count_label.value = f"{len(active)} link betöltve" if active else ""
+        link_count_label.value = tn("links_loaded", len(active)) if active else ""
         # YouTube is számít: felirat híján a batch végén Whisper-átírás ajánlható fel
-        url_single = (url_field.value or "").strip()
-        if url_single:
-            active = active + [url_single]
         has_media_link = any(is_media_site(ln) or is_youtube_url(ln) for ln in active)
         has_audio_file = any(f.suffix.lower() in AUDIO_EXTENSIONS for f in selected_files)
         audio_settings_row.visible = has_audio_file or has_media_link
         page.update()
 
     links_field = ft.TextField(
-        hint_text="Soronként egy URL, pl.\nhttps://pelda.hu/cikk\nhttps://masik.hu/oldal",
+        hint_text=t("links_hint"),
         multiline=True,
         min_lines=3,
         max_lines=6,
@@ -769,7 +783,7 @@ def main(page: ft.Page):
 
     def refresh_retry_button():
         n = len(read_failed_links(current_output[0]))
-        retry_btn.content = f"Újrapróbálás ({n})" if n else "Újrapróbálás"
+        retry_btn.content = t("btn_retry_n", n=n) if n else t("btn_retry")
         retry_btn.disabled = n == 0
 
     def load_failed_links(e):
@@ -780,18 +794,14 @@ def main(page: ft.Page):
             return
         links_field.value = "\n".join(failed)
         update_link_count()
-        log(
-            f"↻  {len(failed)} sikertelen link visszatöltve a linklistába "
-            f"({FAILED_LINKS_NAME}) – indítsd a Konvertálást.",
-            CYAN,
-        )
+        log(tn("log_retry_loaded", len(failed), name=FAILED_LINKS_NAME), CYAN)
 
     retry_btn = ft.Button(
-        "Újrapróbálás",
+        t("btn_retry"),
         icon=ft.Icons.REPLAY,
         style=btn_style,
         height=40,
-        tooltip=f"A kimeneti mappa korábban sikertelen linkjeinek visszatöltése ({FAILED_LINKS_NAME})",
+        tooltip=t("retry_tip", name=FAILED_LINKS_NAME),
         on_click=load_failed_links,
     )
     refresh_retry_button()
@@ -909,11 +919,11 @@ def main(page: ft.Page):
 
     def fmt_seconds(s: float) -> str:
         if s < 60:
-            return f"~{int(s)+1} mp"
+            return t("dur_sec", n=int(s) + 1)
         if s < 3600:
-            return f"~{int(s/60)+1} perc"
+            return t("dur_min", n=int(s / 60) + 1)
         h, m = divmod(int(s) // 60, 60)
-        return f"~{h} óra {m} perc"
+        return t("dur_hm", h=h, m=m)
 
     def fmt_duration(s: float) -> str:
         m, sec = divmod(int(s), 60)
@@ -925,21 +935,11 @@ def main(page: ft.Page):
         m, sec = divmod(rem, 60)
         return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
-    def sanitize_filename(name: str) -> str:
-        safe = re.sub(r"[^a-zA-Z0-9_.-]", "_", name)
-        return safe.strip("_-")[:120] or "output"
-
-    def resize_window():
-        n = sum(1 for f in selected_files if f.suffix.lower() in AUDIO_EXTENSIONS)
-        # 900 alap (nincs audio sor); +80 a settings+ETA sornak, +28 minden további fájlhoz
-        page.window.height = 900 if n == 0 else min(980 + (n - 1) * 28, 1080)
-        page.update()
-
     def update_eta(_e=None):
         audio_files = [f for f in selected_files if f.suffix.lower() in AUDIO_EXTENSIONS]
         if not audio_files:
             eta_container.visible = False
-            resize_window()
+            page.update()
             return
 
         model = model_dd.value or "turbo"
@@ -955,17 +955,17 @@ def main(page: ft.Page):
                 total_eta += eta_s
             else:
                 controls.append(ft.Text(
-                    f"  {f.name}   (ismeretlen hossz)",
+                    f"  {f.name}   {t('eta_unknown')}",
                     size=12, color=FG_DIM, font_family="monospace",
                 ))
         if len(audio_files) > 1 and total_eta:
             controls.append(ft.Text(
-                f"  Összesen: {fmt_seconds(total_eta)}",
+                "  " + t("eta_total", eta=fmt_seconds(total_eta)),
                 size=12, color=YELLOW, weight=ft.FontWeight.W_600, font_family="monospace",
             ))
         eta_column.controls = controls
         eta_container.visible = True
-        resize_window()
+        page.update()
 
     model_dd.on_change = update_eta  # type: ignore[attr-defined]
 
@@ -973,7 +973,7 @@ def main(page: ft.Page):
         icon=ft.Icons.REFRESH,
         icon_size=16,
         icon_color=FG_DIM,
-        tooltip="ETA újraszámítása",
+        tooltip=t("eta_recalc"),
         on_click=update_eta,
     ))
 
@@ -993,11 +993,7 @@ def main(page: ft.Page):
 
     def note_outdated(ex: Exception):
         if flag_update_if_outdated(ex):
-            log(
-                "↻  A hiba elavult letöltőre utal – a következő indításkor "
-                "(start_makethemd.bat) automatikusan frissítem a yt-dlp-t.",
-                YELLOW,
-            )
+            log(t("log_outdated"), YELLOW)
 
     def run_whisper_batch(items: list[dict], lang, model):
         """A kijelölt (felirat nélküli) videók hangját letölti és Whisperrel átírja."""
@@ -1009,7 +1005,7 @@ def main(page: ft.Page):
         for i, cand in enumerate(items, 1):
             title = cand["title"] if len(cand["title"]) <= 55 else cand["title"][:54] + "…"
             live = ft.Text(
-                f"⬇  [{i}/{n}]  {title}  — hang letöltése...",
+                f"⬇  [{i}/{n}]  {title}  — {t('wb_downloading')}",
                 size=13, color=FG_DIM, font_family="monospace",
             )
             status_log.controls.append(live)
@@ -1045,7 +1041,7 @@ def main(page: ft.Page):
                 out_path.write_text(out_text, encoding="utf-8")
                 record_link_result(out_path.parent, cand["url"])
                 status_log.controls.remove(live)
-                log(f"✓  [{i}/{n}]  {title}  →  {out_path.name} [whisper]", GREEN)
+                log(f"✓  [{i}/{n}]  {title}  →  {out_path.name} {t('method_whisper')}", GREEN)
                 ok += 1
             except Exception as ex:
                 try:
@@ -1061,7 +1057,7 @@ def main(page: ft.Page):
 
         spinner.visible = False
         refresh_retry_button()
-        log(f"\nWhisper-átírás kész: {ok} sikeres, {errs} hiba", RED if errs else CYAN)
+        log("\n" + t("wb_done", ok=ok, errors=errs), RED if errs else CYAN)
         notify_done(errs)
 
     def offer_whisper_retry(candidates: list[dict], lang, model):
@@ -1076,11 +1072,11 @@ def main(page: ft.Page):
             title = cand["title"] if len(cand["title"]) <= 48 else cand["title"][:47] + "…"
             if dur:
                 eta = fmt_seconds(dur / speed)
-                label = f"{title}   ·   {fmt_hms(dur)}   ·   átírás kb. {eta}"
+                label = f"{title}   ·   {fmt_hms(dur)}   ·   {t('wd_eta', eta=eta)}"
                 preselect = dur < 3600  # 1 óránál hosszabbat csak kérésre
                 has_long = has_long or dur >= 3600
             else:
-                label = f"{title}   ·   ismeretlen hossz"
+                label = f"{title}   ·   {t('wd_unknown')}"
                 preselect = False
             checkboxes.append(ft.Checkbox(
                 label=label,
@@ -1099,36 +1095,32 @@ def main(page: ft.Page):
 
         def _cancel(e):
             _close()
-            log("Whisper-átírás kihagyva.", FG_DIM)
+            log(t("wd_skipped"), FG_DIM)
 
         def _start(e):
             selected = [cb.data for cb in checkboxes if cb.value]
             _close()
             if not selected:
-                log("Nem volt kijelölt videó, a Whisper-átírás elmaradt.", YELLOW)
+                log(t("wd_none_selected"), YELLOW)
                 return
             threading.Thread(
                 target=run_whisper_batch, args=(selected, lang, model), daemon=True
             ).start()
 
         content_items: list[ft.Control] = [
-            ft.Text(
-                f"{len(candidates)} videóhoz nem készült átirat. "
-                "Jelöld ki, melyeket írja át a Whisper (hang letöltése + helyi átírás):",
-                color=FG_DIM, size=12,
-            ),
+            ft.Text(tn("wd_intro", len(candidates)), color=FG_DIM, size=12),
             *checkboxes,
         ]
         if has_long:
             content_items.append(ft.Text(
-                "Az 1 óránál hosszabb videók alapból nincsenek kijelölve.",
+                t("wd_long"),
                 color=YELLOW, size=11, italic=True,
             ))
 
         dlg = ft.AlertDialog(
             modal=True,
             bgcolor=BG_DARK,
-            title=ft.Text("Átírás Whisperrel?", color=FG, weight=ft.FontWeight.BOLD),
+            title=ft.Text(t("wd_title"), color=FG, weight=ft.FontWeight.BOLD),
             content=ft.Column(
                 content_items,
                 tight=True,
@@ -1138,8 +1130,8 @@ def main(page: ft.Page):
                 scroll=ft.ScrollMode.AUTO,
             ),
             actions=[
-                ft.TextButton("Mégse", style=ft.ButtonStyle(color=FG_DIM), on_click=_cancel),
-                ft.TextButton("Átírás", style=ft.ButtonStyle(color=GREEN), on_click=_start),
+                ft.TextButton(t("wd_cancel"), style=ft.ButtonStyle(color=FG_DIM), on_click=_cancel),
+                ft.TextButton(t("wd_start"), style=ft.ButtonStyle(color=GREEN), on_click=_start),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
             shape=ft.RoundedRectangleBorder(radius=8),
@@ -1168,8 +1160,8 @@ def main(page: ft.Page):
                     check_ocr_environment()
                 except Exception as ex:
                     spinner.visible = False
-                    log(f"PaddleOCR nem indítható: {ex}", RED)
-                    log("Lásd a SETUP.md PaddleOCR telepítési útmutatóját.", YELLOW)
+                    log(t("log_ocr_failed", error=ex), RED)
+                    log(t("log_ocr_setup"), YELLOW)
                     return
             skipped = 0
             # felirat nélkül maradt videók – a batch végén Whisper-átírást ajánlunk fel rájuk
@@ -1185,7 +1177,7 @@ def main(page: ft.Page):
                     return
                 wait = YOUTUBE_PAUSE_S - (time.monotonic() - _yt_last[0])
                 if wait > 0:
-                    progress_fn(f"szünet a YouTube-kérések között ({int(wait) + 1} mp)...")
+                    progress_fn(t("log_yt_pause", n=int(wait) + 1))
                     time.sleep(wait)
 
             def youtube_done(url: str) -> None:
@@ -1196,19 +1188,14 @@ def main(page: ft.Page):
                 """True, ha ez az első tiltás a futásban (ilyenkor egyszer figyelmeztetünk)."""
                 if not (isinstance(ex, TranscriptMissingError) and ex.blocked) or youtube_blocked:
                     return False
-                log(
-                    "⏸  A YouTube letiltotta a felirat-kéréseket – a lista további YouTube-linkjeit "
-                    "most nem kérem le, hogy ne hosszabbodjon a tiltás. Elhalasztva, később "
-                    "az „Újrapróbálás” gombbal folytathatod.",
-                    YELLOW,
-                )
+                log(t("log_yt_blocked"), YELLOW)
                 return True
 
             for path in selected_files:
                 out_path = out_dir / (path.stem + ".md")
                 resolved_path = choose_output_path(out_path)
                 if resolved_path is None:
-                    log(f"⏭  {path.name}  (kihagyva, a kimeneti fájl már létezik)", FG_DIM)
+                    log(f"⏭  {path.name}  {t('log_skipped_exists')}", FG_DIM)
                     skipped += 1
                     continue
                 out_path = resolved_path
@@ -1222,11 +1209,11 @@ def main(page: ft.Page):
                         dur_s, eta_s = get_audio_info(path, model)
                         device_str = f"CUDA • {_device_name}" if _cuda else "CPU"
                         dur_str = f"  {fmt_duration(dur_s)} audio" if dur_s else ""
-                        eta_str = f"  becsült: {fmt_seconds(eta_s)}" if eta_s else ""
+                        eta_str = f"  {t('log_audio_eta', eta=fmt_seconds(eta_s))}" if eta_s else ""
                         log(f"⏳  {path.name}  [{device_str} • {model}{dur_str}{eta_str}]", FG_DIM)
 
                         t0 = time.monotonic()
-                        live_ctrl = ft.Text("   ⟳  indul...", size=13, color=FG_DIM, font_family="monospace")
+                        live_ctrl = ft.Text(f"   ⟳  {t('log_starting')}", size=13, color=FG_DIM, font_family="monospace")
                         status_log.controls.append(live_ctrl)
                         safe_update()
 
@@ -1258,9 +1245,9 @@ def main(page: ft.Page):
                             progress=lambda message: log(message, FG_DIM),
                         )
                         if image_count:
-                            log(f"  OCR: {image_count} képből került szöveg a kimenetbe.", CYAN)
+                            log(tn("log_ocr_images", image_count), CYAN)
                         else:
-                            log("  OCR: nem található kiolvasható szöveget tartalmazó kép.", FG_DIM)
+                            log(t("log_ocr_none"), FG_DIM)
                     out_path.write_text(markdown, encoding="utf-8")
 
                     if live_ctrl is not None:
@@ -1278,46 +1265,6 @@ def main(page: ft.Page):
                     log(f"✗  {path.name}: {ex}", RED)
                     errors += 1
 
-            url_value = url_field.value.strip()
-            if url_value:
-                parsed_url = url_value.replace("https://", "").replace("http://", "")
-                out_name = sanitize_filename(parsed_url)
-                out_path = out_dir / f"{out_name}.md"
-                resolved_path = choose_output_path(out_path)
-                if resolved_path is None:
-                    log("⏭  URL  (kihagyva, a kimeneti fájl már létezik)", FG_DIM)
-                    skipped += 1
-                else:
-                    live_url = ft.Text("⏳  URL feldolgozása...", size=13, color=FG_DIM, font_family="monospace")
-                    status_log.controls.append(live_url)
-                    safe_update()
-
-                    def _on_url_progress(msg):
-                        live_url.value = f"   {msg}"
-                        try:
-                            live_url.update()
-                        except Exception:
-                            pass
-
-                    try:
-                        out_text, method = convert_link(md, url_value, lang, model, _on_url_progress)
-                        resolved_path.write_text(out_text, encoding="utf-8")
-                        record_link_result(out_dir, url_value)
-                        log(f"✓  URL  →  {resolved_path.name}{method}", GREEN)
-                        converted += 1
-                    except Exception as ex:
-                        if isinstance(ex, TranscriptMissingError) and ex.candidate:
-                            whisper_candidates.append({**ex.candidate, "out_path": resolved_path})
-                        record_link_result(out_dir, url_value, str(ex))
-                        log(f"✗  URL: {ex}", RED)
-                        note_outdated(ex)
-                        errors += 1
-                        youtube_blocked = note_youtube_block(ex) or youtube_blocked
-                    finally:
-                        youtube_done(url_value)
-                        status_log.controls.remove(live_url)
-                        safe_update()
-
             # ugyanaz a videó többször a listában (pl. &t= vagy &list= eltéréssel) → csak egyszer
             all_links = parse_link_list(links_field.value or "")
             link_list: list[str] = []
@@ -1328,7 +1275,7 @@ def main(page: ft.Page):
                     link_list.append(ln)
             duplicates = len(all_links) - len(link_list)
             if duplicates:
-                log(f"⏭  {duplicates} ismétlődő link a listában – mindegyiket csak egyszer dolgozom fel.", FG_DIM)
+                log(tn("log_duplicates", duplicates), FG_DIM)
                 skipped += duplicates
             n_links = len(link_list)
 
@@ -1338,14 +1285,14 @@ def main(page: ft.Page):
 
                 if already_converted(out_dir, url):
                     record_link_result(out_dir, url)
-                    log(f"⏭  [{i}/{n_links}]  {short}  (már megvan, kihagyva)", FG_DIM)
+                    log(f"⏭  [{i}/{n_links}]  {short}  {t('log_already_done')}", FG_DIM)
                     skipped += 1
                     continue
 
                 out_path = out_dir / f"{basename}.md"
                 resolved_path = choose_output_path(out_path)
                 if resolved_path is None:
-                    log(f"⏭  [{i}/{n_links}]  {short}  (kihagyva, a kimeneti fájl már létezik)", FG_DIM)
+                    log(f"⏭  [{i}/{n_links}]  {short}  {t('log_skipped_exists')}", FG_DIM)
                     skipped += 1
                     continue
                 out_path = resolved_path
@@ -1353,9 +1300,8 @@ def main(page: ft.Page):
                 if youtube_blocked and is_youtube_url(url):
                     # metaadat-lekérés nélkül (az is YouTube-kérés lenne): cím helyett az URL látszik
                     whisper_candidates.append({"url": url, "title": url, "duration": None, "out_path": out_path})
-                    record_link_result(out_dir, url, "elhalasztva: a YouTube ebben a futásban letiltotta "
-                                                     "a felirat-kéréseket")
-                    log(f"⏸  [{i}/{n_links}]  {short}  (YouTube-tiltás miatt elhalasztva)", YELLOW)
+                    record_link_result(out_dir, url, t("reason_deferred"))
+                    log(f"⏸  [{i}/{n_links}]  {short}  {t('log_deferred')}", YELLOW)
                     deferred += 1
                     continue
 
@@ -1401,29 +1347,22 @@ def main(page: ft.Page):
             spinner.visible = False
             refresh_retry_button()
             if converted == 0 and errors == 0 and skipped == 0 and deferred == 0:
-                log("Nincs kiválasztott fájl vagy URL.", YELLOW)
+                log(t("log_nothing_selected"), YELLOW)
             else:
-                skip_str = f", {skipped} kihagyva" if skipped else ""
-                defer_str = f", {deferred} elhalasztva" if deferred else ""
+                skip_str = t("log_summary_skipped", n=skipped) if skipped else ""
+                defer_str = t("log_summary_deferred", n=deferred) if deferred else ""
                 summary_color = RED if errors else YELLOW if deferred else CYAN
                 log(
-                    f"\nKész: {converted} sikeres, {errors} hiba{defer_str}{skip_str}  →  {out_dir}",
+                    "\n" + t("log_summary", ok=converted, errors=errors, deferred=defer_str,
+                             skipped=skip_str, folder=out_dir),
                     summary_color,
                 )
                 if errors:
-                    log(
-                        f"⚠  {errors} elem nem készült el (lásd a fenti ✗ sorokat) – "
-                        "ezekhez nem jött létre valós átirat.",
-                        RED,
-                    )
+                    log(tn("log_errors_warning", errors), RED)
                 if errors or deferred:
                     failed_count = len(read_failed_links(out_dir))
                     if failed_count:
-                        log(
-                            f"↻  {failed_count} sikertelen link elmentve: {out_dir / FAILED_LINKS_NAME}\n"
-                            "   Később az „Újrapróbálás” gombbal visszatöltheted őket.",
-                            YELLOW,
-                        )
+                        log(tn("log_failed_saved", failed_count, path=out_dir / FAILED_LINKS_NAME), YELLOW)
                 notify_done(errors + deferred)
                 if whisper_candidates:
                     offer_whisper_retry(whisper_candidates, lang, model)
@@ -1444,15 +1383,15 @@ def main(page: ft.Page):
         ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     formats = [
-        (ft.Icons.DESCRIPTION_OUTLINED, "Dokumentumok", "PDF, DOCX, DOC, PPTX"),
-        (ft.Icons.TABLE_CHART_OUTLINED, "Táblázatok", "XLSX, XLS, CSV"),
-        (ft.Icons.ARTICLE_OUTLINED, "Webfájlok és szöveg", "HTML, HTM, XML, RSS"),
-        (ft.Icons.MENU_BOOK_OUTLINED, "E-könyvek", "EPUB, AZW3, MOBI, FB2"),
-        (ft.Icons.DATA_OBJECT, "Notebook és adatok", "IPYNB, JSON"),
-        (ft.Icons.IMAGE_OUTLINED, "Képek", "PNG, JPG, JPEG, GIF, BMP, WEBP"),
-        (ft.Icons.AUDIO_FILE_OUTLINED, "Hangfájlok", "MP3, WAV, M4A"),
-        (ft.Icons.MAIL_OUTLINE, "Outlook-üzenetek", "MSG"),
-        (ft.Icons.FOLDER_ZIP_OUTLINED, "Archívumok", "ZIP"),
+        (ft.Icons.DESCRIPTION_OUTLINED, t("fmt_documents"), "PDF, DOCX, DOC, PPTX"),
+        (ft.Icons.TABLE_CHART_OUTLINED, t("fmt_spreadsheets"), "XLSX, XLS, CSV"),
+        (ft.Icons.ARTICLE_OUTLINED, t("fmt_web"), "HTML, HTM, XML, RSS"),
+        (ft.Icons.MENU_BOOK_OUTLINED, t("fmt_ebooks"), "EPUB, AZW3, MOBI, FB2"),
+        (ft.Icons.DATA_OBJECT, t("fmt_notebooks"), "IPYNB, JSON"),
+        (ft.Icons.IMAGE_OUTLINED, t("fmt_images"), "PNG, JPG, JPEG, GIF, BMP, WEBP"),
+        (ft.Icons.AUDIO_FILE_OUTLINED, t("fmt_audio"), "MP3, WAV, M4A"),
+        (ft.Icons.MAIL_OUTLINE, t("fmt_outlook"), "MSG"),
+        (ft.Icons.FOLDER_ZIP_OUTLINED, t("fmt_archives"), "ZIP"),
     ]
     half = (len(formats) + 1) // 2
     BUBBLE_W = 540
@@ -1460,7 +1399,7 @@ def main(page: ft.Page):
         content=ft.Column([
             ft.Row([
                 ft.Icon(ft.Icons.AUTO_AWESOME, size=16, color=CYAN),
-                ft.Text("Konvertálható fájltípusok", size=14, weight=ft.FontWeight.BOLD, color=FG),
+                ft.Text(t("formats_title"), size=14, weight=ft.FontWeight.BOLD, color=FG),
             ], spacing=8),
             ft.Divider(height=1, color=BORDER),
             ft.Row([
@@ -1510,11 +1449,11 @@ def main(page: ft.Page):
         mouse_cursor=ft.MouseCursor.HELP,
     )
 
-    def platform_tile(name: str, slug: str | None, color: str, tooltip: str) -> ft.Container:
-        logo = (ft.Image(
+    def platform_tile(name: str, slug: str, color: str, tooltip: str) -> ft.Container:
+        logo = ft.Image(
             src=f"brands/{slug}.svg", width=21, height=21,
             fit=ft.BoxFit.CONTAIN, semantics_label=name,
-        ) if slug else ft.Icon(ft.Icons.LANGUAGE, size=22, color=color))
+        )
 
         def on_hover(e):
             hovered = e.data is True
@@ -1531,19 +1470,68 @@ def main(page: ft.Page):
 
     platforms_row = ft.Row([
         ft.Column([
-            ft.Text("Konvertálható", size=13, weight=ft.FontWeight.W_600, color=FG),
-            ft.Text("fájlok és linkek", size=11, color=FG_DIM),
+            ft.Text(t("header_title"), size=13, weight=ft.FontWeight.W_600, color=FG),
+            ft.Text(t("header_subtitle"), size=11, color=FG_DIM),
         ], spacing=0, tight=True),
         ft.Container(width=1, height=28, bgcolor=BORDER, margin=ft.Margin(left=6, right=6, top=0, bottom=0)),
         info_button,
-        platform_tile("TikTok", "tiktok", "#F4EEE8", "TikTok · videók"),
-        platform_tile("YouTube", "youtube", "#FF5D5D", "YouTube · videók és feliratok"),
-        platform_tile("Facebook", "facebook", "#5B9BFF", "Facebook · videók és Reels · fb.watch"),
-        platform_tile("Instagram", "instagram", "#F58AB4", "Instagram · videók és Reels"),
-        platform_tile("X / Twitter", "x", "#F4EEE8", "X / Twitter · videók"),
-        platform_tile("Weboldalak", None, CYAN, "Weboldalak · cikkek és oldalak"),
-    ], spacing=8, height=48, scroll=ft.ScrollMode.AUTO,
+        platform_tile("TikTok", "tiktok", "#F4EEE8", t("tip_tiktok")),
+        platform_tile("YouTube", "youtube", "#FF5D5D", t("tip_youtube")),
+        platform_tile("Facebook", "facebook", "#5B9BFF", t("tip_facebook")),
+        platform_tile("Instagram", "instagram", "#F58AB4", t("tip_instagram")),
+        platform_tile("X / Twitter", "x", "#F4EEE8", t("tip_x")),
+    ], spacing=8, height=48, scroll=ft.ScrollMode.AUTO, expand=True,
        vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+    def switch_language(code: str):
+        if code == get_language():
+            return
+        if spinner.visible:
+            log(t("lang_switch_busy"), YELLOW)
+            return
+        set_language(code)
+        save_settings(ui_language=code)
+        state = {
+            "md": md,
+            "files": list(selected_files),
+            "links": links_field.value or "",
+            "ocr": bool(ocr_checkbox.value),
+            "audio_lang": language_dd.value,
+            "model": model_dd.value,
+            "log": [(c.value, c.color) for c in status_log.controls if isinstance(c, ft.Text)],
+        }
+        page.overlay.clear()
+        page.controls.clear()
+        main(page, state)
+
+    def lang_segment(code: str) -> ft.Control:
+        active = code == get_language()
+        segment = ft.Container(
+            content=ft.Text(code.upper(), size=12, weight=ft.FontWeight.W_700,
+                            color=BG_DARK if active else FG_DIM),
+            width=34, height=26, alignment=ft.Alignment.CENTER, border_radius=7,
+            bgcolor=CYAN if active else None,
+        )
+        if active:
+            return segment
+        return ft.GestureDetector(content=segment, mouse_cursor=ft.MouseCursor.CLICK,
+                                  on_tap=lambda _e: switch_language(code))
+
+    # Felület nyelve: két szegmensű kapcsoló a fejléc jobb szélén, a mezők sötét hátterével
+    lang_switch = ft.Container(
+        content=ft.Row([
+            ft.Icon(ft.Icons.TRANSLATE, size=16, color=FG_DIM),
+            ft.Row([lang_segment(c) for c in LANGUAGES], spacing=2, tight=True),
+        ], spacing=8, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        padding=ft.Padding(left=10, right=4, top=4, bottom=4),
+        bgcolor=BG_DARK,
+        border=border_style,
+        border_radius=10,
+        tooltip=t("lang_switch_tip"),
+    )
+
+    header_row = ft.Row([platforms_row, lang_switch], spacing=12,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     copy_label = ft.Text("", size=12, color=GREEN)
 
@@ -1579,29 +1567,26 @@ def main(page: ft.Page):
         subprocess.Popen(["clip"], stdin=subprocess.PIPE).communicate(
             input=("﻿" + text).encode("utf-16-le")
         )
-        copy_label.value = "kimásolva vágólapra"
+        copy_label.value = t("copied")
         page.update()
 
     # ── Elrendezés: fejléc → Források → Beállítások → Konvertálás → napló ──────
     sources_card = card(
-        section_label("Fájlok"),
+        section_label(t("sec_files")),
         ft.Row([
-            mk_btn("Fájlok kiválasztása", ft.Icons.UPLOAD_FILE, pick_files),
-            mk_btn("Fájlok törlése", ft.Icons.DELETE_OUTLINE, clear_files),
+            mk_btn(t("btn_pick_files"), ft.Icons.UPLOAD_FILE, pick_files),
+            mk_btn(t("btn_clear_files"), ft.Icons.DELETE_OUTLINE, clear_files),
         ], spacing=12),
         files_tags_container,
         ft.Divider(height=1, color=BORDER),
-        section_label("Link"),
-        ft.Row([url_field]),
-        ft.Divider(height=1, color=BORDER),
         ft.Row([
-            section_label("Linklista"),
+            section_label(t("sec_links")),
             ft.Container(expand=True),
             link_count_label,
         ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ft.Row([
-            mk_btn("Linklista (.txt) betöltése", ft.Icons.PLAYLIST_ADD, load_links),
-            mk_btn("Linkek törlése", ft.Icons.CLEAR_ALL, clear_links),
+            mk_btn(t("btn_load_links"), ft.Icons.PLAYLIST_ADD, load_links),
+            mk_btn(t("btn_clear_links"), ft.Icons.CLEAR_ALL, clear_links),
             retry_btn,
         ], spacing=12),
         ft.Row([links_field]),
@@ -1611,7 +1596,7 @@ def main(page: ft.Page):
         content=ft.Row([
             ft.Icon(ft.Icons.FOLDER_OPEN, size=18, color=FG_DIM),
             output_path_label,
-            mk_btn("Kimenet mappa", ft.Icons.DRIVE_FOLDER_UPLOAD, browse_output),
+            mk_btn(t("btn_output_folder"), ft.Icons.DRIVE_FOLDER_UPLOAD, browse_output),
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         bgcolor=BG_DARK,
         border=border_style,
@@ -1620,7 +1605,7 @@ def main(page: ft.Page):
     )
 
     settings_card = card(
-        section_label("Kimenet és beállítások"),
+        section_label(t("sec_output")),
         output_row,
         ocr_checkbox,
         audio_settings_row,
@@ -1630,21 +1615,21 @@ def main(page: ft.Page):
     convert_row = ft.Row([
         ft.Container(expand=True),
         spinner,
-        mk_btn("Konvertálás", ft.Icons.PLAY_ARROW, convert, style=convert_btn_style, height=48),
+        mk_btn(t("btn_convert"), ft.Icons.PLAY_ARROW, convert, style=convert_btn_style, height=48),
     ], spacing=16, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     console_box = ft.Container(
         content=ft.Column([
             ft.Container(
                 content=ft.Row([
-                    section_label("Napló"),
+                    section_label(t("sec_log")),
                     ft.Row([
                         copy_label,
                         ft.IconButton(
                             icon=ft.Icons.CONTENT_COPY,
                             icon_size=16,
                             icon_color=FG_DIM,
-                            tooltip="Másolás vágólapra",
+                            tooltip=t("copy_tip"),
                             style=ft.ButtonStyle(padding=ft.Padding(6, 6, 6, 6)),
                             on_click=lambda e: copy_log(),
                         ),
@@ -1662,13 +1647,26 @@ def main(page: ft.Page):
         expand=True,
     )
 
+    if restore:
+        selected_files.extend(restore["files"])
+        links_field.value = restore["links"]
+        ocr_checkbox.value = restore["ocr"]
+        language_dd.value = restore["audio_lang"]
+        if any(o.key == restore["model"] for o in model_dd.options):
+            model_dd.value = restore["model"]
+        for value, color in restore["log"]:
+            log(value, color or FG)
+
     page.add(
-        platforms_row,
+        header_row,
         sources_card,
         settings_card,
         convert_row,
         console_box,
     )
+    if restore:
+        refresh_file_list()
+        update_link_count()
 
 
 if __name__ == "__main__":

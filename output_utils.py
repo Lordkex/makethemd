@@ -7,14 +7,13 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
 
+from i18n import detect_language, set_language, t
+
 # A kimeneti mappában tartott lista a sikertelen linkekről, későbbi újrapróbáláshoz.
 # Sima .txt, így a „Linklista (.txt) betöltése” gombbal is visszatölthető.
-FAILED_LINKS_NAME = "_sikertelen_linkek.txt"
-_FAILED_HEADER = (
-    "# MakeThemd – sikertelen linkek\n"
-    "# Az app „Újrapróbálás” gombja innen tölti vissza őket a linklistába;\n"
-    "# ami később elkészül, automatikusan lekerül innen.\n"
-)
+FAILED_LINKS_NAME = "_failed_links.txt"
+# korábbi verziók ezen a néven mentették; olvasáskor még figyelembe vesszük
+LEGACY_FAILED_LINKS_NAME = "_sikertelen_linkek.txt"
 
 
 # Felhasználói beállítások (pl. utoljára választott kimeneti mappa) újraindítások között.
@@ -45,10 +44,21 @@ def saved_output_dir(default: Path, path: Path = SETTINGS_PATH) -> Path:
     return default
 
 
+def apply_saved_language(path: Path = SETTINGS_PATH) -> None:
+    """A mentett felületi nyelv; első indításkor a rendszer nyelve dönt."""
+    set_language(load_settings(path).get("ui_language") or detect_language())
+
+
+def failed_links_path(out_dir: Path) -> Path:
+    path = out_dir / FAILED_LINKS_NAME
+    legacy = out_dir / LEGACY_FAILED_LINKS_NAME
+    return legacy if not path.exists() and legacy.exists() else path
+
+
 def read_failed_links(out_dir: Path) -> dict[str, str]:
     """A kimeneti mappa sikertelen-listája: URL → az utolsó hiba (dátummal)."""
     try:
-        lines = (out_dir / FAILED_LINKS_NAME).read_text(encoding="utf-8").splitlines()
+        lines = failed_links_path(out_dir).read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError):
         return {}
     failed: dict[str, str] = {}
@@ -80,11 +90,13 @@ def record_link_result(out_dir: Path, url: str, error: str | None = None) -> Non
 
     path = out_dir / FAILED_LINKS_NAME
     try:
+        # a régi nevű lista tartalma már a `failed`-ben van, az új fájlba kerül át
+        (out_dir / LEGACY_FAILED_LINKS_NAME).unlink(missing_ok=True)
         if not failed:
             path.unlink(missing_ok=True)
             return
         body = "\n\n".join(f"# {r}\n{u}" if r else u for u, r in failed.items())
-        path.write_text(_FAILED_HEADER + "\n" + body + "\n", encoding="utf-8")
+        path.write_text(t("failed_header") + "\n" + body + "\n", encoding="utf-8")
     except OSError as ex:
         logging.getLogger(__name__).warning("A sikertelen-lista nem írható: %s", ex)
 
@@ -109,8 +121,8 @@ def choose_output_path(path: Path) -> Path | None:
     root.attributes("-topmost", True)
     try:
         answer = messagebox.askyesnocancel(
-            "Kimeneti fájl már létezik",
-            f"A(z) {path.name} fájl már létezik.\nFelülírja, átnevezi, vagy kihagyja ezt az elemet?",
+            t("exists_title"),
+            t("exists_body", name=path.name),
             icon=messagebox.WARNING,
         )
     finally:

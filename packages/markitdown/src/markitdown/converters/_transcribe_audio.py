@@ -82,7 +82,7 @@ def transcribe_audio(
     print(f"[whisper] device={dev_label}  model={model_size}", flush=True)
 
     model = _get_model(model_size, device)
-    print("[whisper] modell betöltve, átirat indul...", flush=True)
+    print("[whisper] model loaded, transcribing...", flush=True)
 
     audio_bytes = file_stream.read()
     suffix = f".{audio_format}"
@@ -123,7 +123,7 @@ def transcribe_audio(
         segs = len(result.get("segments", []))
         words = len(transcript.split())
         print(
-            f"[whisper] kész  {elapsed:.1f}s  nyelv={lang_det}  {segs} szelet  {words} szó",
+            f"[whisper] done  {elapsed:.1f}s  language={lang_det}  {segs} segments  {words} words",
             flush=True,
         )
     finally:

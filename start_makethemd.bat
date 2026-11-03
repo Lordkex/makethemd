@@ -6,7 +6,7 @@ echo Starting MakeThemd...
 
 where py >nul 2>nul
 if not errorlevel 1 (
-    rem letolto-csomagok heti frissitese; hiba eseten is indul az app
+    rem weekly update of the downloader packages; the app starts even if it fails
     py -3 "%~dp0updater.py"
     py -3 "%~dp0app.py"
 ) else (
@@ -16,9 +16,9 @@ if not errorlevel 1 (
         python "%~dp0app.py"
     ) else (
         echo.
-        echo Python nem talalhato a rendszerben.
-        echo Telepitsd a Python-t, es engedelyezd az "Add to PATH" opciot.
-        echo A projekt README-ben talalod a telepitesi lepeseket.
+        echo Python was not found on this system.
+        echo Install Python and enable the "Add to PATH" option.
+        echo See the README for the installation steps.
         pause
         exit /b 1
     )
@@ -26,8 +26,8 @@ if not errorlevel 1 (
 
 if errorlevel 1 (
     echo.
-    echo Az alkalmazas hibaval allt le.
-    echo Ha meg nem telepitetted a fuggoosegeket, futtasd:
+    echo The app stopped with an error.
+    echo If you have not installed the dependencies yet, run:
     echo   py -m pip install -r requirements.txt
     echo   py -m pip install -e "packages\markitdown[all]"
     pause

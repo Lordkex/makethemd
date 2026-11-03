@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
+from i18n import t
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OCR_PYTHON = PROJECT_ROOT / ".venv-ocr" / "Scripts" / "python.exe"
 OCR_WORKER = Path(__file__).resolve().with_name("ocr_worker.py")
@@ -15,12 +17,9 @@ OCR_CACHE = PROJECT_ROOT / ".ocr-cache"
 
 def check_ocr_environment() -> None:
     if not OCR_PYTHON.is_file():
-        raise RuntimeError(
-            "Az OCR-környezet nem található. Futtasd a SETUP.md-ben szereplő "
-            "uv venv és uv pip parancsokat a .venv-ocr létrehozásához."
-        )
+        raise RuntimeError(t("err_ocr_env"))
     if not OCR_WORKER.is_file():
-        raise RuntimeError(f"Az OCR worker nem található: {OCR_WORKER}")
+        raise RuntimeError(t("err_ocr_worker_missing", path=OCR_WORKER))
 
 
 def extract_image_texts(source_path: Path) -> list[dict[str, str]]:
@@ -64,7 +63,7 @@ def extract_image_texts(source_path: Path) -> list[dict[str, str]]:
             raise RuntimeError(str(error))
         if process.returncode != 0:
             details = process.stderr.strip() or process.stdout.strip()
-            raise RuntimeError(details or "Az OCR worker hibával leállt.")
+            raise RuntimeError(details or t("err_ocr_worker_failed"))
         return [
             {"name": str(item["name"]), "text": str(item["text"])}
             for item in payload.get("images", [])
@@ -87,8 +86,8 @@ def append_image_ocr(
         return markdown, 0
 
     sections = [
-        f"### Kép {index}\n\n{image['text']}"
+        f"### {t('ocr_image', n=index)}\n\n{image['text']}"
         for index, image in enumerate(images, start=1)
     ]
-    ocr_markdown = "## OCR-rel kinyert szöveg képekből\n\n" + "\n\n".join(sections)
+    ocr_markdown = f"## {t('ocr_heading')}\n\n" + "\n\n".join(sections)
     return markdown.rstrip() + "\n\n" + ocr_markdown + "\n", len(sections)
