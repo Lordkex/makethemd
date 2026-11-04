@@ -80,9 +80,9 @@ def open_file_dialog() -> list[Path]:
         root.destroy()
         result.extend(Path(p) for p in paths)
 
-    t = threading.Thread(target=_pick)
-    t.start()
-    t.join()
+    worker = threading.Thread(target=_pick)
+    worker.start()
+    worker.join()
     return result
 
 
@@ -98,9 +98,9 @@ def open_folder_dialog() -> Path | None:
         if path:
             result.append(Path(path))
 
-    t = threading.Thread(target=_pick)
-    t.start()
-    t.join()
+    worker = threading.Thread(target=_pick)
+    worker.start()
+    worker.join()
     return result[0] if result else None
 
 
@@ -119,9 +119,9 @@ def open_txt_dialog() -> Path | None:
         if path:
             result.append(Path(path))
 
-    t = threading.Thread(target=_pick)
-    t.start()
-    t.join()
+    worker = threading.Thread(target=_pick)
+    worker.start()
+    worker.join()
     return result[0] if result else None
 
 
