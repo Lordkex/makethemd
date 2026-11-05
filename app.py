@@ -28,7 +28,7 @@ from output_utils import (
     FAILED_LINKS_NAME, apply_saved_language, choose_output_path, read_failed_links,
     record_link_result, load_settings, save_settings, saved_output_dir,
 )
-from paddleocr_tools.ocr_utils import append_image_ocr, check_ocr_environment
+from paddleocr_tools.ocr_utils import OCR_EXTENSIONS, convert_file_with_ocr, ensure_ocr_environment
 
 apply_saved_language()
 
@@ -736,6 +736,13 @@ def main(page: ft.Page, restore: dict | None = None):
         check_color=BG_DARK,
         label_style=ft.TextStyle(color=FG, size=14),
     )
+    ocr_progress_title = ft.Text("", size=13, color=FG, weight=ft.FontWeight.W_600)
+    ocr_progress_label = ft.Text("", size=12, color=FG_DIM)
+    ocr_progress_bar = ft.ProgressBar(value=None, color=CYAN, bgcolor=BG_DARK, height=6)
+    ocr_progress_panel = ft.Container(
+        content=ft.Column([ocr_progress_title, ocr_progress_label, ocr_progress_bar], spacing=8),
+        visible=False,
+    )
     link_count_label = ft.Text("", size=12, color=FG_DIM)
 
     def update_link_count(_e=None):
@@ -840,6 +847,29 @@ def main(page: ft.Page, restore: dict | None = None):
             ft.Text(msg, color=color, size=13, font_family="monospace")
         )
         safe_update()
+
+    ocr_setup_running = threading.Event()
+
+    def prepare_ocr(_e=None):
+        if not ocr_checkbox.value or ocr_setup_running.is_set():
+            return
+        ocr_setup_running.set()
+        ocr_checkbox.disabled = True
+        log(t("log_ocr_prepare"), CYAN)
+
+        def run_setup():
+            try:
+                ensure_ocr_environment(progress=lambda message: log(message, FG_DIM))
+            except Exception as ex:
+                log(t("log_ocr_failed", error=ex), RED)
+            finally:
+                ocr_setup_running.clear()
+                ocr_checkbox.disabled = False
+                safe_update()
+
+        threading.Thread(target=run_setup, daemon=True).start()
+
+    ocr_checkbox.on_change = prepare_ocr
 
     def make_tag(path: Path) -> ft.Container:
         def remove(e, p=path):
@@ -1140,7 +1170,10 @@ def main(page: ft.Page, restore: dict | None = None):
         safe_update()
 
     def convert(e):
+        if spinner.visible:
+            return
         status_log.controls.clear()
+        ocr_progress_panel.visible = False
         spinner.visible = True
         copy_label.value = ""
         page.update()
@@ -1156,13 +1189,17 @@ def main(page: ft.Page, restore: dict | None = None):
             out_dir.mkdir(parents=True, exist_ok=True)
 
             if use_ocr:
+                log(t("log_ocr_prepare"), CYAN)
                 try:
-                    check_ocr_environment()
+                    # Also covers restored selections and Convert clicked during setup.
+                    # The setup lock waits for any checkbox-triggered installation.
+                    ensure_ocr_environment(progress=lambda message: log(message, FG_DIM))
                 except Exception as ex:
-                    spinner.visible = False
                     log(t("log_ocr_failed", error=ex), RED)
-                    log(t("log_ocr_setup"), YELLOW)
+                    spinner.visible = False
+                    safe_update()
                     return
+
             skipped = 0
             # felirat nélkül maradt videók – a batch végén Whisper-átírást ajánlunk fel rájuk
             whisper_candidates: list[dict] = []
@@ -1231,24 +1268,44 @@ def main(page: ft.Page, restore: dict | None = None):
 
                         progress_fn = _on_progress
 
-                    result = md.convert(
-                        str(path),
-                        whisper_language=lang,
-                        whisper_model=model,
-                        whisper_progress_fn=progress_fn,
-                    )
-                    markdown = result.text_content
-                    if use_ocr:
-                        markdown, image_count = append_image_ocr(
-                            markdown,
-                            path,
-                            progress=lambda message: log(message, FG_DIM),
+                    if use_ocr and path.suffix.lower() in OCR_EXTENSIONS:
+                        t0 = time.monotonic()
+                        ocr_progress_title.value = path.name
+                        ocr_progress_panel.visible = True
+                        ocr_progress_bar.color = CYAN
+                        last_update = [0.0]
+
+                        def update_ocr_status(info):
+                            ocr_progress_label.value = t("ocr_progress_elapsed", message=info.message,
+                                                        time=fmt_hms(info.elapsed))
+                            ocr_progress_bar.value = info.fraction
+                            now = time.monotonic()
+                            if now - last_update[0] >= 0.15 or info.fraction == 1:
+                                last_update[0] = now
+                                safe_update()
+
+                        markdown, image_count = convert_file_with_ocr(
+                            path, progress=lambda message: log(message, FG_DIM), status=update_ocr_status,
                         )
                         if image_count:
-                            log(tn("log_ocr_images", image_count), CYAN)
+                            log(tn("log_ocr_pages" if path.suffix.lower() == ".pdf" else "log_ocr_images", image_count), CYAN)
                         else:
-                            log(t("log_ocr_none"), FG_DIM)
+                            log(t("log_pdf_text_ok" if path.suffix.lower() == ".pdf" else "log_ocr_none"), FG_DIM)
+                    else:
+                        result = md.convert(
+                            str(path),
+                            whisper_language=lang,
+                            whisper_model=model,
+                            whisper_progress_fn=progress_fn,
+                        )
+                        markdown = result.text_content
                     out_path.write_text(markdown, encoding="utf-8")
+                    if use_ocr and path.suffix.lower() in OCR_EXTENSIONS:
+                        ocr_progress_bar.value = 1
+                        ocr_progress_bar.color = GREEN
+                        ocr_progress_label.value = t("ocr_progress_elapsed", message=t("ocr_progress_done"),
+                                                    time=fmt_hms(time.monotonic() - t0))
+                        safe_update()
 
                     if live_ctrl is not None:
                         status_log.controls.remove(live_ctrl)
@@ -1257,6 +1314,10 @@ def main(page: ft.Page, restore: dict | None = None):
                     log(f"✓  {path.name}  →  {out_path.name}{elapsed_str}", GREEN)
                     converted += 1
                 except Exception as ex:
+                    if use_ocr and path.suffix.lower() in OCR_EXTENSIONS:
+                        ocr_progress_bar.value = 0
+                        ocr_progress_bar.color = RED
+                        ocr_progress_label.value = t("ocr_progress_failed")
                     if live_ctrl is not None:
                         try:
                             status_log.controls.remove(live_ctrl)
@@ -1486,7 +1547,7 @@ def main(page: ft.Page, restore: dict | None = None):
     def switch_language(code: str):
         if code == get_language():
             return
-        if spinner.visible:
+        if spinner.visible or ocr_setup_running.is_set():
             log(t("lang_switch_busy"), YELLOW)
             return
         set_language(code)
@@ -1608,6 +1669,7 @@ def main(page: ft.Page, restore: dict | None = None):
         section_label(t("sec_output")),
         output_row,
         ocr_checkbox,
+        ocr_progress_panel,
         audio_settings_row,
         eta_container,
     )
@@ -1667,6 +1729,8 @@ def main(page: ft.Page, restore: dict | None = None):
     if restore:
         refresh_file_list()
         update_link_count()
+        if ocr_checkbox.value:
+            prepare_ocr()
 
 
 if __name__ == "__main__":

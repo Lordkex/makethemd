@@ -1,0 +1,9 @@
+# Installed into the project .venv when OCR is enabled.
+# Include document readers: conversion runs before image OCR.
+-e ./packages/markitdown[pdf,docx,pptx,xlsx]
+pdfminer.six==20251230
+pdfplumber==0.11.9
+paddleocr==3.7.0
+paddlepaddle==3.3.1
+Pillow>=10.0.0
+PyMuPDF>=1.24.0

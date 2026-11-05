@@ -34,12 +34,8 @@ pydub==0.25.1
 # DjVu OCR fallbackhoz opcionálisan telepíthető:
 #   pip install pytesseract Pillow
 
-# Lokális kép-OCR – a külön .venv-ocr Python 3.13 környezetben települ
-# Python 3.14-en ezek kimaradnak, mert a PaddlePaddle Windows-csomag nem érhető el hozzá.
-paddleocr==3.7.0; python_version == "3.13"
-paddlepaddle==3.3.1; python_version == "3.13"
-Pillow>=10.0.0; python_version == "3.13"
-PyMuPDF>=1.24.0; python_version == "3.13"
+# Lokális kép-OCR: a requirements-ocr.txt csomagjai az OCR bekapcsolásakor
+# automatikusan a projekt .venv környezetébe települnek.
 
 # Audio átírás – Whisper (Google Speech helyett)
 # NVIDIA GPU esetén (CUDA 12.8):

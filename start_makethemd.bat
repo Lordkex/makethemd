@@ -4,6 +4,12 @@ cd /d "%~dp0"
 
 echo Starting MakeThemd...
 
+if exist "%~dp0.venv\Scripts\python.exe" (
+    "%~dp0.venv\Scripts\python.exe" "%~dp0updater.py"
+    "%~dp0.venv\Scripts\python.exe" "%~dp0app.py"
+    goto :check_result
+)
+
 where py >nul 2>nul
 if not errorlevel 1 (
     rem weekly update of the downloader packages; the app starts even if it fails
@@ -24,6 +30,7 @@ if not errorlevel 1 (
     )
 )
 
+:check_result
 if errorlevel 1 (
     echo.
     echo The app stopped with an error.

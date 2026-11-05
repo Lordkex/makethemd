@@ -1,65 +1,29 @@
-#!/usr/bin/env python3
-"""Run the PaddleOCR worker smoke test from the main Python environment."""
+﻿#!/usr/bin/env python3
+"""Exercise the same automatic setup and OCR worker used by the app."""
 
-import json
-import os
-import subprocess
-import tempfile
+import sys
 from pathlib import Path
 
-if __package__:
-    from .ocr_utils import OCR_CACHE, OCR_PYTHON, OCR_WORKER, check_ocr_environment
-else:
-    from ocr_utils import OCR_CACHE, OCR_PYTHON, OCR_WORKER, check_ocr_environment
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from paddleocr_tools.ocr_utils import OCR_PYTHON, run_ocr_worker
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     try:
-        check_ocr_environment()
-    except RuntimeError as ex:
+        images = run_ocr_worker(["--self-test"], progress=print)
+    except (RuntimeError, OSError) as ex:
         print(f"HIBA: {ex}")
         return 1
-
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temporary:
-        result_path = Path(temporary.name)
-
-    try:
-        environment = os.environ.copy()
-        environment.update(
-            {
-                "HOME": str(OCR_CACHE),
-                "USERPROFILE": str(OCR_CACHE),
-                "HF_HOME": str(OCR_CACHE / "huggingface"),
-                "PADDLE_PDX_CACHE_HOME": str(OCR_CACHE / "paddlex"),
-            }
-        )
-        OCR_CACHE.mkdir(exist_ok=True)
-        process = subprocess.run(
-            [
-                str(OCR_PYTHON),
-                str(OCR_WORKER),
-                "--self-test",
-                "--output",
-                str(result_path),
-            ],
-            env=environment,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        payload = json.loads(result_path.read_text(encoding="utf-8-sig"))
-    finally:
-        result_path.unlink(missing_ok=True)
-
-    if process.returncode != 0 or payload.get("error"):
-        print(f"HIBA: {payload.get('error') or process.stderr.strip()}")
-        return 1
-
-    text = payload.get("images", [{}])[0].get("text", "")
+    text = "\n".join(image["text"] for image in images)
     print(f"OCR worker Python: {OCR_PYTHON}")
-    print(f"OCR lefutott. Felismert szöveg: {text or '(nem talált szöveget)'}")
+    if "123" not in text:
+        print(f"HIBA: a tesztkép szövege nem ismerhető fel: {text!r}")
+        return 1
+    print(f"OCR lefutott. Felismert szöveg: {text}")
     return 0
 
 

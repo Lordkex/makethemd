@@ -162,12 +162,46 @@ STRINGS: dict[str, dict[str, str]] = {
         "err_fdown_all_failed": "A Facebook-hang letöltése a FDOWN szolgáltatóval sem sikerült: {error}",
 
         # OCR
-        "err_ocr_env": "Az OCR-környezet nem található. Futtasd a README „Local image OCR” "
-                       "szakaszában szereplő uv venv és uv pip parancsokat a .venv-ocr létrehozásához.",
+        "err_ocr_env": "A projekt .venv környezete hiányos: {path}. Javítsd vagy hozd létre újra a projektkörnyezetet.",
+        "err_ocr_install": "Az OCR-függőségek telepítése nem sikerült. Ellenőrizd az internetkapcsolatot és "
+                           "a projekt Python-verziójának kompatibilitását. A következő OCR-kérés újrapróbálja.\n{error}",
+        "err_ocr_import": "Az OCR-csomagok nem tölthetők be a projekt .venv környezetében:\n{error}",
+        "log_ocr_create_env": "OCR: a projekt .venv környezetének létrehozása…",
+        "log_ocr_check": "OCR: a projektkörnyezet függőségeinek ellenőrzése…",
+        "log_ocr_prepare": "OCR és dokumentumolvasás előkészítése. A konvertálás megvárja a telepítés befejezését…",
+        "log_ocr_install": "OCR: hiányzó függőségek telepítése a .venv környezetbe ({packages}). Ez több percig tarthat…",
+        "log_ocr_gpu_install": "OCR: NVIDIA GPU észlelve. A GPU-s futtatókörnyezet egyszeri letöltése (kb. 3 GB), "
+                               "ez több percig tarthat…",
+        "log_ocr_gpu_ready": "OCR: a felismerés mostantól a GPU-n fut.",
+        "log_ocr_gpu_skipped": "OCR: a GPU-s futtatókörnyezet nem telepíthető, ezért a felismerés CPU-n fut "
+                               "(sűrű oldalanként kb. egy perc): {error}",
+        "log_ocr_ready": "OCR: a projektkörnyezet használatra kész.",
+        "log_ocr_models": "OCR-felismerés indul. Első használatkor a szükséges modellek letöltése több percig tarthat…",
         "err_ocr_worker_missing": "Az OCR worker nem található: {path}",
         "err_ocr_worker_failed": "Az OCR worker hibával leállt.",
         "ocr_heading": "OCR-rel kinyert szöveg képekből",
         "ocr_image": "Kép {n}",
+        "ocr_progress_starting": "Feldolgozás indítása…",
+        "ocr_progress_reading": "Dokumentum szövegének kiolvasása…",
+        "ocr_progress_finding": "Képek keresése a dokumentumban…",
+        "ocr_progress_scan": "Képek keresése: {done}/{total} oldal",
+        "ocr_progress_found": "{total} kép vár feldolgozásra.",
+        "ocr_progress_models": "OCR-modellek betöltése; első alkalommal letöltés is szükséges lehet…",
+        "ocr_progress_images": "OCR: {done}/{total} kép kész · {name}",
+        "ocr_progress_done": "OCR-feldolgozás kész.",
+        "ocr_progress_failed": "Az OCR-feldolgozás megszakadt; a részletek a naplóban láthatók.",
+        "ocr_progress_elapsed": "{message} · Eltelt idő: {time}",
+        "pdf_page_heading": "PDF-oldal {page}",
+        "pdf_progress_page": "{page}/{total}. oldal · {action}",
+        "pdf_progress_reading": "szöveg ellenőrzése",
+        "pdf_progress_ocr": "teljes oldal OCR-felismerése",
+        "pdf_progress_images": "az oldal ábráinak OCR-felismerése",
+        "pdf_progress_cached": "OCR betöltve a gyorsítótárból",
+        "pdf_progress_text": "szöveg kiolvasva",
+        "err_pdf_page_ocr": "A(z) {page}. PDF-oldalról nem sikerült használható szöveget felismerni.",
+        "err_pdf_page_failed": "A(z) {page}. PDF-oldal feldolgozása nem sikerült: {error}",
+        "log_ocr_pages": "  PDF: {n} oldal szövege teljesoldalas OCR-rel került a kimenetbe.",
+        "log_pdf_text_ok": "  PDF: az oldalak szövege közvetlenül kiolvasható volt; teljesoldalas OCR nem kellett.",
 
         # kimeneti fájlok
         "failed_header": "# MakeThemd – sikertelen linkek\n"
@@ -337,12 +371,47 @@ STRINGS: dict[str, dict[str, str]] = {
         "err_fdown_text": "The downloader returned a text response instead of a media file.",
         "err_fdown_all_failed": "Downloading the Facebook audio via FDOWN failed as well: {error}",
 
-        "err_ocr_env": "The OCR environment was not found. Run the uv venv and uv pip commands from "
-                       "the “Local image OCR” section of the README to create .venv-ocr.",
+        "err_ocr_env": "The project .venv is incomplete: {path}. Repair or recreate the project environment.",
+        "err_ocr_install": "Could not install the OCR dependencies. Check your internet connection and "
+                           "project Python version compatibility. The next OCR request will retry.\n{error}",
+        "err_ocr_import": "Could not import the OCR packages in the project .venv:\n{error}",
+        "log_ocr_create_env": "OCR: creating the project .venv environment…",
+        "log_ocr_check": "OCR: checking dependencies in the project environment…",
+        "log_ocr_prepare": "Preparing OCR and document readers. Conversion will wait for setup to finish…",
+        "log_ocr_install": "OCR: installing missing dependencies into .venv ({packages}). This may take several minutes…",
+        "log_ocr_gpu_install": "OCR: NVIDIA GPU detected. Downloading the GPU runtime once (about 3 GB); "
+                               "this may take several minutes…",
+        "log_ocr_gpu_ready": "OCR: recognition now runs on the GPU.",
+        "log_ocr_gpu_skipped": "OCR: the GPU runtime could not be installed, so recognition runs on the CPU "
+                               "(about a minute per dense page): {error}",
+        "log_ocr_ready": "OCR: the project environment is ready.",
+        "log_ocr_models": "Starting OCR. On first use, downloading the required models may take several minutes…",
         "err_ocr_worker_missing": "The OCR worker was not found: {path}",
         "err_ocr_worker_failed": "The OCR worker stopped with an error.",
         "ocr_heading": "Text extracted from images (OCR)",
         "ocr_image": "Image {n}",
+        "ocr_progress_starting": "Starting processing…",
+        "ocr_progress_reading": "Reading document text…",
+        "ocr_progress_finding": "Finding images in the document…",
+        "ocr_progress_scan": "Finding images: page {done}/{total}",
+        "ocr_progress_found": "{total} images ready for processing.",
+        "ocr_progress_models": "Loading OCR models; the first run may also need a download…",
+        "ocr_progress_images": "OCR: {done}/{total} images complete · {name}",
+        "ocr_progress_done": "OCR processing complete.",
+        "ocr_progress_failed": "OCR processing stopped; see the log for details.",
+        "ocr_progress_elapsed": "{message} · Elapsed: {time}",
+        "pdf_page_heading": "PDF page {page}",
+        "pdf_progress_page": "Page {page}/{total} · {action}",
+        "pdf_progress_reading": "checking text",
+        "pdf_progress_ocr": "recognizing the whole page",
+        "pdf_progress_images": "recognizing images on the page",
+        "pdf_progress_cached": "OCR loaded from cache",
+        "pdf_progress_text": "text extracted",
+        "err_pdf_page_ocr": "Could not recognize usable text on PDF page {page}.",
+        "err_pdf_page_failed": "Could not process PDF page {page}: {error}",
+        "log_ocr_pages": "  PDF: text from {n} pages was recovered with whole-page OCR.",
+        "log_ocr_pages_one": "  PDF: text from 1 page was recovered with whole-page OCR.",
+        "log_pdf_text_ok": "  PDF: page text was readable directly; whole-page OCR was not needed.",
 
         "failed_header": "# MakeThemd – failed links\n"
                          "# The app's “Retry failed” button reloads them into the link list;\n"

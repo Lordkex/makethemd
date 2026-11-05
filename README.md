@@ -67,6 +67,8 @@ cd makethemd
 
 **1. Dependencies**
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
 
@@ -99,7 +101,8 @@ or directly:
 python app.py
 ```
 
-`start_makethemd.bat` updates the downloader packages (`yt-dlp[default]`, `youtube-transcript-api`)
+`start_makethemd.bat` uses the project's `.venv\Scripts\python.exe` when available and
+updates the downloader packages (`yt-dlp[default]`, `youtube-transcript-api`)
 once a week. If the app runs into an error that points to an outdated downloader (e.g.
 `403 Forbidden`), the update runs on the next start, and if the new version fails to load, the
 previous one is restored. `python app.py` skips this step; you can run it by hand with
@@ -137,29 +140,68 @@ OCR processes embedded images locally and appends the recognised text to the end
 output. It supports images embedded in DOCX, PPTX and XLSX files, images in PDFs (via
 [PyMuPDF](https://github.com/pymupdf/PyMuPDF)), and standalone PNG, JPG, TIFF, BMP and WebP files.
 
-### Separate OCR environment
+### Automatic setup in the project environment
 
-PaddlePaddle has no Python 3.14 package for Windows, so OCR runs as a subprocess in a separate
-Python 3.13 environment. From the project root ([uv](https://github.com/astral-sh/uv) required):
+OCR uses the project's existing `.venv` (including Python 3.12). A separate `.venv-ocr`
+environment and `uv` are no longer needed. Checking the OCR box immediately starts a background
+check of PaddleOCR, PaddlePaddle, Pillow, PyMuPDF and the document readers for PDF, DOCX, PPTX and
+XLSX. Missing dependencies are installed automatically from `requirements-ocr.txt` into `.venv`,
+including this repository's MarkItDown with its document extras. Progress appears in the app log.
+The checkbox is temporarily disabled during setup. Conversion waits for setup to finish, and
+also checks setup when an enabled OCR selection has been restored. Starting the app with OCR
+disabled does not install OCR packages.
 
-```powershell
-uv venv --python 3.13 .venv-ocr
-uv pip install --python .venv-ocr\Scripts\python.exe -r requirements.txt
-```
+For supported files, document reading and image OCR run together in a fresh `.venv` subprocess.
+This makes newly installed readers available immediately, even if the GUI previously cached
+a missing-dependency error. Models download on the first actual recognition request.
 
-You don't need to activate it. The app starts `.venv-ocr\Scripts\python.exe` automatically.
-The first run downloads the OCR models into `.ocr-cache`, and after that OCR also works offline.
+PDFs are processed page by page. Readable text is extracted directly; broken character
+encodings (including `(cid:...)` glyph IDs and unmapped Type3 fonts) and scanned pages use
+whole-page OCR. Recognized page text replaces the faulty extraction in the original page
+order. PDF page headings identify the source page. On readable pages, text in embedded
+diagrams is still recognized and included with that page; duplicate images and image masks
+are skipped. The table formatter runs only when actual ruled tables are detected.
+
+Completed whole-page recognitions are cached under `.ocr-cache/pdf-pages`, keyed by the
+PDF contents and OCR settings. Retrying a failed conversion reuses completed pages; changing
+the PDF invalidates its cache. A page that cannot be recognized stops conversion with its
+page number instead of silently producing broken text.
+The live progress panel shows the current document, processing stage and elapsed time.
+PDF image discovery reports pages scanned; recognition reports completed images out of the
+total, with a progress bar. Model loading/downloading uses an indeterminate bar and a clock
+that keeps updating while the worker is busy.
+For PDFs, the panel reports the current page, total pages and whether it is reading text,
+running whole-page OCR or reusing a cached page.
+
+If `.venv` is absent, the OCR setup creates it with the Python running the app, retaining access
+to system packages for older installations that installed the app globally. An existing
+but broken `.venv` is reported rather than overwritten. Use a Python version supported by
+PaddlePaddle (Python 3.12 or 3.13 on 64-bit Windows); an incompatible interpreter is not
+automatically replaced. The system Python is never an installation target.
+
+The first run needs internet access for packages and models and can take several minutes.
+Models are cached in `.ocr-cache`; subsequent runs can work offline. Failed installations
+are retried on the next OCR request. Already available dependencies are not reinstalled.
+
+With an NVIDIA GPU (driver 560 or newer), setup replaces the CPU build of PaddlePaddle in `.venv`
+with its CUDA 12.6 build, and PaddleOCR then uses the GPU on its own. This is a one-time download
+that takes about 3 GB of disk space. It makes whole-page OCR about 70 times faster: roughly 1 s
+instead of 60 s per dense page, measured on an RTX 3080 and a Ryzen 5 5600X. If the download fails,
+OCR keeps working on the CPU and setup tries again the next time the app starts.
 
 Test:
 ```powershell
-python paddleocr_tools\test_ocr.py
+.\.venv\Scripts\python.exe -m paddleocr_tools.test_ocr
 ```
 
 ### Troubleshooting
 
-- **OCR environment not found:** run the two `uv` commands above again.
-- **`No matching distribution found for paddlepaddle`:** check that `.venv-ocr` really uses
-  Python 3.13.
+- **Incomplete project environment:** repair or recreate `.venv`, then reinstall the app dependencies.
+- **Installation fails:** the log includes pip's error. Check the connection and retry OCR.
+- **`No matching distribution found for paddlepaddle`:** use Python 3.12 or 3.13 for `.venv`
+  on 64-bit Windows. The app cannot install a wheel unsupported by the current Python.
+- **Manual installation / repair:** run
+  `.\.venv\Scripts\python.exe -m pip install -r requirements-ocr.txt` from the project root.
 - **Model download fails:** check your internet connection, proxy and firewall.
 - **No text recognised:** try a larger, sharper, less compressed image.
 
