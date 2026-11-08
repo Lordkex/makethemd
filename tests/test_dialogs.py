@@ -4,7 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import app
-from i18n import t
+import output_utils
+from i18n import DEFAULT_LANGUAGE, set_language, t
 
 
 PROJECT = Path(app.__file__).resolve().parent
@@ -31,6 +32,29 @@ class DialogTests(unittest.TestCase):
              patch.object(app.filedialog, "askopenfilename", return_value="linkek.txt") as ask:
             self.assertEqual(app.open_txt_dialog(), Path("linkek.txt"))
         self.assertEqual(ask.call_args.kwargs["title"], t("dlg_link_list"))
+
+
+class OverwriteQuestionTests(unittest.TestCase):
+    def tearDown(self):
+        set_language(DEFAULT_LANGUAGE)
+
+    def ask(self, count, answer):
+        with patch.object(output_utils.tk, "Tk"), \
+             patch.object(output_utils.messagebox, "askyesno", return_value=answer) as ask:
+            return output_utils.confirm_overwrite_links(count), ask
+
+    def test_answer_is_returned_and_no_is_the_default(self):
+        for answer in (True, False):
+            result, ask = self.ask(1, answer)
+            self.assertEqual(result, answer)
+            self.assertEqual(ask.call_args.kwargs["default"], output_utils.messagebox.NO)
+
+    def test_question_is_translated_in_both_languages(self):
+        set_language("en")
+        self.assertIn("This link", self.ask(1, False)[1].call_args.args[1])
+        self.assertIn("3 links", self.ask(3, False)[1].call_args.args[1])
+        set_language("hu")
+        self.assertIn("1 linkhez", self.ask(1, False)[1].call_args.args[1])
 
 
 class TranslatorShadowingTests(unittest.TestCase):

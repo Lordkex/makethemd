@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
 
-from i18n import detect_language, set_language, t
+from i18n import detect_language, set_language, t, tn
 
 # A kimeneti mappában tartott lista a sikertelen linkekről, későbbi újrapróbáláshoz.
 # Sima .txt, így a „Linklista (.txt) betöltése” gombbal is visszatölthető.
@@ -109,6 +109,22 @@ def make_unique_path(path: Path) -> Path:
         candidate = path.with_name(f"{path.stem}_{counter}{path.suffix}")
         counter += 1
     return candidate
+
+
+def confirm_overwrite_links(count: int) -> bool:
+    """Megkérdezi, hogy a már kész linkeket újra elkészítse-e; Enterre a biztonságos „Nem” a válasz."""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    try:
+        return messagebox.askyesno(
+            t("exists_title"),
+            tn("exists_links_body", count),
+            icon=messagebox.WARNING,
+            default=messagebox.NO,
+        )
+    finally:
+        root.destroy()
 
 
 def choose_output_path(path: Path) -> Path | None:

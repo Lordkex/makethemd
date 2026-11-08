@@ -26,7 +26,7 @@ from markitdown.converters._youtube_converter import IS_YOUTUBE_TRANSCRIPT_CAPAB
 from facebook_audio import convert_to_mp3, download_facebook_audio, is_facebook_url
 from i18n import LANGUAGES, get_language, set_language, t, tn
 from output_utils import (
-    FAILED_LINKS_NAME, apply_saved_language, choose_output_path, read_failed_links,
+    FAILED_LINKS_NAME, apply_saved_language, choose_output_path, confirm_overwrite_links, read_failed_links,
     record_link_result, load_settings, save_settings, saved_output_dir,
 )
 from paddleocr_tools.ocr_utils import OCR_EXTENSIONS, convert_file_with_ocr, ensure_ocr_environment
@@ -345,12 +345,12 @@ def parse_link_list(text: str) -> list[str]:
     return [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
 
 
-def already_converted(out_dir: Path, url: str) -> bool:
-    """Van-e már kész kimenet a linkhez a mappában (Facebooknál csak valódi átirattal)."""
+def existing_output(out_dir: Path, url: str) -> Path | None:
+    """A linkhez tartozó kész kimenet a mappában (Facebooknál csak valódi átirattal), ha van."""
     name = url_to_basename(url)
-    paths = [out_dir / f"{name}.md", *out_dir.glob(f"???_{name}.md")]
-    return any(path.exists() and (not is_facebook_url(url) or output_has_transcript(path))
-               for path in paths)
+    paths = [out_dir / f"{name}.md", *sorted(out_dir.glob(f"???_{name}.md"))]
+    return next((path for path in paths
+                 if path.exists() and (not is_facebook_url(url) or output_has_transcript(path))), None)
 
 
 def _download_media_with_ytdlp(url: str, tmpdir: str) -> Path:
@@ -1343,24 +1343,28 @@ def main(page: ft.Page, restore: dict | None = None):
                 log(tn("log_duplicates", duplicates), FG_DIM)
                 skipped += duplicates
             n_links = len(link_list)
+            # futásonként egyszer kérdezünk, hogy hosszú lista folytatásakor ne linkenként kelljen
+            done_count = sum(existing_output(out_dir, ln) is not None for ln in link_list)
+            overwrite_done = done_count > 0 and confirm_overwrite_links(done_count)
 
             for i, url in enumerate(link_list, 1):
                 short = url if len(url) <= 55 else url[:54] + "…"
                 basename = url_to_basename(url)
 
-                if already_converted(out_dir, url):
+                out_path = existing_output(out_dir, url)
+                if out_path is not None and not overwrite_done:
                     record_link_result(out_dir, url)
                     log(f"⏭  [{i}/{n_links}]  {short}  {t('log_already_done')}", FG_DIM)
                     skipped += 1
                     continue
 
-                out_path = out_dir / f"{basename}.md"
-                resolved_path = choose_output_path(out_path)
-                if resolved_path is None:
-                    log(f"⏭  [{i}/{n_links}]  {short}  {t('log_skipped_exists')}", FG_DIM)
-                    skipped += 1
-                    continue
-                out_path = resolved_path
+                if out_path is None:
+                    resolved_path = choose_output_path(out_dir / f"{basename}.md")
+                    if resolved_path is None:
+                        log(f"⏭  [{i}/{n_links}]  {short}  {t('log_skipped_exists')}", FG_DIM)
+                        skipped += 1
+                        continue
+                    out_path = resolved_path
 
                 if youtube_blocked and is_youtube_url(url):
                     # metaadat-lekérés nélkül (az is YouTube-kérés lenne): cím helyett az URL látszik

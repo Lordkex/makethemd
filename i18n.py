@@ -223,6 +223,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "exists_title": "Kimeneti fájl már létezik",
         "exists_body": "A(z) {name} fájl már létezik.\n\n"
                        "Igen: felülírás\nNem: mentés új néven\nMégse: kihagyás",
+        "exists_links_body": "{n} linkhez már van kész kimeneti fájl.\n\n"
+                             "Igen: újrakonvertálás és felülírás\nNem: kihagyás",
 
         # frissítő (konzol)
         "upd_skipped": "Frissítés-ellenőrzés kihagyva (nincs internet vagy nem érhető el a PyPI).",
@@ -445,6 +447,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "exists_title": "Output file already exists",
         "exists_body": "{name} already exists.\n\n"
                        "Yes: overwrite\nNo: save under a new name\nCancel: skip",
+        "exists_links_body_one": "This link already has a finished output file.\n\n"
+                                 "Yes: convert it again and overwrite\nNo: skip it",
+        "exists_links_body": "{n} links already have finished output files.\n\n"
+                             "Yes: convert them again and overwrite\nNo: skip them",
 
         "upd_skipped": "Update check skipped (no internet connection or PyPI is unreachable).",
         "upd_updating": "Updating downloader packages: {names} ...",

@@ -54,10 +54,14 @@ class FailedLinksTests(unittest.TestCase):
         self.assertEqual(list(read_failed_links(self.out_dir)), [URL_B])
         self.assertTrue((self.out_dir / FAILED_LINKS_NAME).exists())
 
-    def test_already_converted_matches_existing_output(self):
-        self.assertFalse(app.already_converted(self.out_dir, URL_A))
-        (self.out_dir / "youtube_1CFgwfD_xYQ.md").write_text("# YouTube\n", encoding="utf-8")
-        self.assertTrue(app.already_converted(self.out_dir, URL_A + "&t=42s"))
+    def test_existing_output_finds_the_file_to_overwrite(self):
+        self.assertIsNone(app.existing_output(self.out_dir, URL_A))
+        numbered = self.out_dir / "001_youtube_1CFgwfD_xYQ.md"
+        numbered.write_text("# YouTube\n", encoding="utf-8")
+        self.assertEqual(app.existing_output(self.out_dir, URL_A + "&t=42s"), numbered)
+        plain = self.out_dir / "youtube_1CFgwfD_xYQ.md"
+        plain.write_text("# YouTube\n", encoding="utf-8")
+        self.assertEqual(app.existing_output(self.out_dir, URL_A), plain)
 
 
 class SettingsTests(unittest.TestCase):
