@@ -4,38 +4,52 @@ cd /d "%~dp0"
 
 echo Starting MakeThemd...
 
-if exist "%~dp0.venv\Scripts\python.exe" (
-    "%~dp0.venv\Scripts\python.exe" "%~dp0updater.py"
-    "%~dp0.venv\Scripts\python.exe" "%~dp0app.py"
-    goto :check_result
+set "VENV_PY=%~dp0.venv\Scripts\python.exe"
+set "SETUP_PY="
+
+"%VENV_PY%" -c "" >nul 2>nul
+if not errorlevel 1 (
+    set SETUP_PY="%VENV_PY%"
+    goto :setup
 )
 
-where py >nul 2>nul
-if not errorlevel 1 (
-    rem weekly update of the downloader packages; the app starts even if it fails
-    py -3 "%~dp0updater.py"
-    py -3 "%~dp0app.py"
-) else (
-    where python >nul 2>nul
+rem First start on this machine: PaddlePaddle has no wheels for Python 3.14 or newer.
+for %%v in (3.12 3.13 3.11 3.10) do (
+    py -%%v -c "" >nul 2>nul
     if not errorlevel 1 (
-        python "%~dp0updater.py"
-        python "%~dp0app.py"
-    ) else (
-        echo.
-        echo Python was not found on this system.
-        echo Install Python and enable the "Add to PATH" option.
-        echo See the README for the installation steps.
-        pause
-        exit /b 1
+        set "SETUP_PY=py -%%v"
+        goto :setup
     )
 )
-
-:check_result
-if errorlevel 1 (
-    echo.
-    echo The app stopped with an error.
-    echo If you have not installed the dependencies yet, run:
-    echo   py -m pip install -r requirements.txt
-    echo   py -m pip install -e "packages\markitdown[all]"
-    pause
+python -c "" >nul 2>nul
+if not errorlevel 1 (
+    set "SETUP_PY=python"
+    goto :setup
 )
+
+echo.
+echo Python was not found on this system.
+echo Install Python 3.12 and enable the "Add to PATH" option.
+echo See the README for the installation steps.
+pause
+exit /b 1
+
+:setup
+rem Creates .venv on the first start and picks the GPU or CPU engines for this machine.
+%SETUP_PY% "%~dp0setup_env.py"
+if errorlevel 1 goto :failed
+
+rem weekly update of the downloader packages; the app starts even if it fails
+"%VENV_PY%" "%~dp0updater.py"
+"%VENV_PY%" "%~dp0app.py"
+if not errorlevel 1 exit /b 0
+echo.
+echo The app stopped with an error.
+pause
+exit /b 1
+
+:failed
+echo.
+echo The project environment could not be set up. See the message above.
+pause
+exit /b 1

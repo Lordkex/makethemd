@@ -20,9 +20,9 @@ class ScheduleTests(unittest.TestCase):
 
 
 class UpdateFlowTests(unittest.TestCase):
-    def run_main(self, installed, latest, works, pip_ok=True):
+    def run_main(self, installed, latest, works, pip_ok=True, settings=None):
         saved = {}
-        with patch.object(updater, "load_settings", return_value={}), \
+        with patch.object(updater, "load_settings", return_value=settings or {}), \
              patch.object(updater, "save_settings", side_effect=lambda **kw: saved.update(kw)), \
              patch.object(updater, "installed_version", side_effect=lambda n: installed[n]), \
              patch.object(updater, "latest_version", side_effect=latest), \
@@ -45,6 +45,26 @@ class UpdateFlowTests(unittest.TestCase):
         self.assertIn("yt-dlp[default]", pip.call_args_list[0].args)
         self.assertEqual(set(pip.call_args_list[1].args),
                          {"yt-dlp==2026.6.9", "yt-dlp-ejs==0.3", "youtube-transcript-api==1.2.4"})
+
+    def test_missing_package_is_installed_before_the_weekly_check(self):
+        installed = {"yt-dlp": "1", "yt-dlp-ejs": "1", "youtube-transcript-api": None}
+        recent = {"last_update_check": datetime.now().isoformat()}
+        pip, _ = self.run_main(installed, lambda n: "1", works=[True], settings=recent)
+        pip.assert_called_once()
+        self.assertIn("youtube-transcript-api", pip.call_args.args)
+
+    def test_recent_check_with_all_packages_does_nothing(self):
+        installed = {"yt-dlp": "1", "yt-dlp-ejs": "1", "youtube-transcript-api": "1"}
+        recent = {"last_update_check": datetime.now().isoformat()}
+        pip, saved = self.run_main(installed, lambda n: "9", works=[True], settings=recent)
+        pip.assert_not_called()
+        self.assertEqual(saved, {})
+
+    def test_missing_ejs_is_installed_alongside_another_update(self):
+        installed = {"yt-dlp": "1", "yt-dlp-ejs": None, "youtube-transcript-api": None}
+        pip, _ = self.run_main(installed, lambda n: "1", works=[True])
+        self.assertIn("yt-dlp[default]", pip.call_args.args)
+        self.assertIn("youtube-transcript-api", pip.call_args.args)
 
     def test_offline_skips_without_recording_the_check(self):
         installed = {"yt-dlp": "1", "yt-dlp-ejs": "1", "youtube-transcript-api": "1"}

@@ -65,29 +65,15 @@ git clone https://github.com/Lordkex/makethemd.git
 cd makethemd
 ```
 
-**1. Dependencies**
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-```
+Install Python 3.10–3.13 (3.12 recommended; PaddlePaddle has no builds for 3.14 yet), then run
+`start_makethemd.bat`. The first start creates `.venv` and installs everything into it:
 
-**2. PyTorch (for Whisper transcription)**
+- with an NVIDIA GPU and driver 560 or newer: the CUDA builds of PyTorch (Whisper) and
+  PaddlePaddle (OCR), a one-time download of several GB;
+- otherwise, including AMD and Intel GPUs: the CPU builds.
 
-With an NVIDIA GPU (recommended, CUDA 12.8):
-```powershell
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
-```
-Without a GPU (transcription is slower):
-```powershell
-python -m pip install torch
-```
-The app detects on its own whether a usable GPU is available.
-
-**3. The modified MarkItDown (editable install)**
-```powershell
-python -m pip install -e "packages/markitdown[all]"
-```
+Later starts only redo this when the package lists change or a GPU appears or disappears. If the
+GPU build cannot use the card, the app falls back to the CPU build.
 
 ---
 
@@ -101,7 +87,7 @@ or directly:
 python app.py
 ```
 
-`start_makethemd.bat` uses the project's `.venv\Scripts\python.exe` when available and
+`start_makethemd.bat` prepares and uses the project's `.venv` (see above) and
 updates the downloader packages (`yt-dlp[default]`, `youtube-transcript-api`)
 once a week. If the app runs into an error that points to an outdated downloader (e.g.
 `403 Forbidden`), the update runs on the next start, and if the new version fails to load, the

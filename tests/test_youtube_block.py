@@ -11,10 +11,21 @@ PAGE_TEXT = "# YouTube\n\n## Cím\n"
 class YoutubeBlockTests(unittest.TestCase):
     def test_captions_exist_but_not_served_means_blocked(self):
         info = {"title": "Cím", "duration": 60, "automatic_captions": {"hu": [{}]}}
-        with patch.object(app, "probe_media_info", return_value=info):
+        with patch.object(app, "probe_media_info", return_value=info), \
+             patch.object(app, "IS_YOUTUBE_TRANSCRIPT_CAPABLE", True):
             with self.assertRaises(app.TranscriptMissingError) as ctx:
                 app.ensure_real_transcript(URL, PAGE_TEXT)
         self.assertTrue(ctx.exception.blocked)
+        self.assertEqual(ctx.exception.candidate["url"], URL)
+
+    def test_missing_library_is_not_reported_as_a_block(self):
+        info = {"title": "Cím", "duration": 60, "automatic_captions": {"hu": [{}]}}
+        with patch.object(app, "probe_media_info", return_value=info), \
+             patch.object(app, "IS_YOUTUBE_TRANSCRIPT_CAPABLE", False):
+            with self.assertRaises(app.TranscriptMissingError) as ctx:
+                app.ensure_real_transcript(URL, PAGE_TEXT)
+        self.assertFalse(ctx.exception.blocked)
+        self.assertEqual(str(ctx.exception), app.t("err_transcript_lib_missing"))
         self.assertEqual(ctx.exception.candidate["url"], URL)
 
     def test_no_captions_is_not_a_block(self):

@@ -113,7 +113,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "log_summary_skipped": ", {n} kihagyva",
         "log_errors_warning": "⚠  {n} elem nem készült el (lásd a fenti ✗ sorokat) – "
                               "ezekhez nem jött létre valós átirat.",
-        "log_failed_saved": "↻  {n} sikertelen link elmentve: {path}\n"
+        "log_failed_saved": "↻  A sikertelen-listán összesen {n} link van (a korábbi futásokból is): {path}\n"
                             "   Később az „Újrapróbálás” gombbal visszatöltheted őket.",
 
         # Whisper-ajánlat a futás végén
@@ -139,6 +139,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "err_captions_blocked": "a videónak van felirata, de a YouTube felirat-API nem adta ki – "
                                 "valószínűleg túl sok kérés miatt átmenetileg blokkolta az IP-címedet. "
                                 "Válts hálózatot vagy várj néhány órát; a Whisper-átírás így is működik.",
+        "env_create": "Első indítás: a projektkörnyezet (.venv) létrehozása…",
+        "env_create_failed": "A .venv környezet nem hozható létre.",
+        "env_bad_python": "A Python {version} nem használható a projektkörnyezethez: telepítsd a Python 3.12-t.",
+        "env_torch_gpu": "NVIDIA GPU észlelve: a PyTorch GPU-s (CUDA) változatának egyszeri letöltése, kb. 3 GB…",
+        "env_torch_cpu": "Nincs használható NVIDIA GPU: a PyTorch CPU-s változatának telepítése…",
+        "env_torch_fallback": "A GPU-s PyTorch nem tudja használni ezt a kártyát, marad a CPU-s változat.",
+        "env_deps": "A program csomagjainak ellenőrzése és telepítése…",
+        "env_pip_failed": "a pip parancs nem sikerült: {command}",
+        "env_failed": "A környezet beállítása nem sikerült, a következő indításkor újrapróbálom: {error}",
+        "env_ready": "A projektkörnyezet kész ({device}).",
+        "err_transcript_lib_missing": "a felirat lekéréséhez szükséges youtube-transcript-api csomag hiányzik ebből a "
+                                      "Python-környezetből, ezért nem készült átirat. A következő indításkor a program "
+                                      "automatikusan telepíti; addig a Whisper-átírás használható.",
         "err_no_media": "A letöltő nem adott médiafájlt.",
         "err_media_missing": "A letöltött médiafájl nem található vagy üres.",
         "err_no_transcript": "A hangletöltés után nem készült átirat; a kimenet nem lett elmentve.",
@@ -323,7 +336,7 @@ STRINGS: dict[str, dict[str, str]] = {
                               "no real transcript was created for them.",
         "log_failed_saved_one": "↻  1 failed link saved to: {path}\n"
                                 "   Reload it later with the “Retry failed” button.",
-        "log_failed_saved": "↻  {n} failed links saved to: {path}\n"
+        "log_failed_saved": "↻  The failed list now holds {n} links (including earlier runs): {path}\n"
                             "   Reload them later with the “Retry failed” button.",
 
         "wb_downloading": "downloading audio...",
@@ -349,6 +362,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "err_captions_blocked": "the video has captions, but the YouTube caption API did not serve them – "
                                 "your IP address is probably blocked temporarily after too many requests. "
                                 "Switch networks or wait a few hours; Whisper transcription still works.",
+        "env_create": "First start: creating the project environment (.venv)…",
+        "env_create_failed": "Could not create the .venv environment.",
+        "env_bad_python": "Python {version} cannot be used for the project environment: install Python 3.12.",
+        "env_torch_gpu": "NVIDIA GPU detected: downloading the GPU (CUDA) build of PyTorch once, about 3 GB…",
+        "env_torch_cpu": "No usable NVIDIA GPU: installing the CPU build of PyTorch…",
+        "env_torch_fallback": "The GPU build of PyTorch cannot use this card, keeping the CPU build.",
+        "env_deps": "Checking and installing the app's packages…",
+        "env_pip_failed": "the pip command failed: {command}",
+        "env_failed": "Environment setup failed, it will be retried at the next start: {error}",
+        "env_ready": "The project environment is ready ({device}).",
+        "err_transcript_lib_missing": "the youtube-transcript-api package needed for captions is missing from this "
+                                      "Python environment, so no transcript was created. The app installs it "
+                                      "automatically at the next start; Whisper transcription works until then.",
         "err_no_media": "The downloader returned no media file.",
         "err_media_missing": "The downloaded media file is missing or empty.",
         "err_no_transcript": "No transcript was created from the downloaded audio; nothing was saved.",

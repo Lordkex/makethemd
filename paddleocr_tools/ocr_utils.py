@@ -31,9 +31,10 @@ _PADDLE_GPU_INDEX = "https://www.paddlepaddle.org.cn/packages/stable/cu126/"
 _PADDLE_GPU_MIN_DRIVER = 560  # First driver series with CUDA 12.6, which this build targets.
 _setup_lock = threading.Lock()
 _environment_ready = False
-# PaddleOCR must come first: loading Paddle's CUDA build before Torch breaks Torch's DLL loading (WinError 127).
+# no_torch must come first, see that module. Runs from PROJECT_ROOT, so the package is importable.
 _IMPORT_CHECK = (
     "import sys\n"
+    "import paddleocr_tools.no_torch\n"
     "try:\n"
     "    from paddleocr import PaddleOCR\n"
     "    import paddle, PIL, pymupdf\n"

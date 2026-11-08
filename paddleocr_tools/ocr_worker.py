@@ -14,6 +14,7 @@ from typing import Any, Iterable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages" / "markitdown" / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import paddleocr_tools.no_torch  # noqa: F401  (must precede anything that can load Paddle)
 from PIL import Image, ImageDraw
 from paddleocr_tools.progress import emit_progress
 from i18n import set_language

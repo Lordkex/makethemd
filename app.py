@@ -22,6 +22,7 @@ if FFMPEG_BIN not in os.environ["PATH"]:
 
 import flet as ft
 from markitdown import MarkItDown
+from markitdown.converters._youtube_converter import IS_YOUTUBE_TRANSCRIPT_CAPABLE
 from facebook_audio import convert_to_mp3, download_facebook_audio, is_facebook_url
 from i18n import LANGUAGES, get_language, set_language, t, tn
 from output_utils import (
@@ -314,6 +315,9 @@ def ensure_real_transcript(url: str, text: str) -> None:
     }
     if not (info.get("subtitles") or info.get("automatic_captions")):
         raise TranscriptMissingError(t("err_no_captions"), candidate)
+    if not IS_YOUTUBE_TRANSCRIPT_CAPABLE:
+        # a csomag nélkül a felirat-API-t meg sem hívtuk, tehát ez nem IP-tiltás
+        raise TranscriptMissingError(t("err_transcript_lib_missing"), candidate)
     raise TranscriptMissingError(t("err_captions_blocked"), candidate, blocked=True)
 
 
@@ -675,7 +679,7 @@ def main(page: ft.Page, restore: dict | None = None):
         _cuda = False
         _device_name = t("device_no_whisper")
 
-    device_text = f"{'CUDA  •  ' + _device_name if _cuda else 'CPU  •  ' + _device_name}"
+    device_text = f"CUDA  •  {_device_name}" if _cuda else _device_name
     # a maradék helyet tölti ki; hosszú GPU-névnél „…”, a teljes név tooltipben
     device_label = ft.Container(
         content=ft.Text(

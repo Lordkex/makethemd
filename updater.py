@@ -65,7 +65,9 @@ def main() -> None:
     apply_saved_language()
     settings = load_settings()
     now = datetime.now()
-    if not is_due(settings, now):
+    # hiányzó csomagnál nem várunk a heti ellenőrzésre (pl. másik Python-környezetre váltás után)
+    missing = any(installed_version(name) is None for name in PACKAGES)
+    if not missing and not is_due(settings, now):
         return
 
     try:
@@ -78,14 +80,17 @@ def main() -> None:
         print(t("upd_skipped"))
         return  # nem jegyezzük fel: a következő indításkor újra próbálja
 
-    if not outdated and installed_version("yt-dlp-ejs"):
+    if not installed_version("yt-dlp-ejs") and "yt-dlp" not in outdated:
+        outdated.append("yt-dlp")
+
+    if not outdated:
         save_settings(last_update_check=now.isoformat(timespec="seconds"), force_update=False)
         return
 
     before = {name: installed_version(name) for name in PACKAGES}
-    print(t("upd_updating", names=", ".join(outdated or ["yt-dlp-ejs"])))
+    print(t("upd_updating", names=", ".join(outdated)))
     ok = pip_install("--upgrade", "--upgrade-strategy", "only-if-needed",
-                     *(PACKAGES[name] for name in outdated or ["yt-dlp"]))
+                     *(PACKAGES[name] for name in outdated))
 
     if ok and works():
         after = ", ".join(f"{n} {installed_version(n)}" for n in PACKAGES)

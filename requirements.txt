@@ -38,10 +38,7 @@ pydub==0.25.1
 # automatikusan a projekt .venv környezetébe települnek.
 
 # Audio átírás – Whisper (Google Speech helyett)
-# NVIDIA GPU esetén (CUDA 12.8):
-#   pip install torch --index-url https://download.pytorch.org/whl/cu128
-# CPU esetén:
-#   pip install torch
+# A torch GPU-s vagy CPU-s buildjét a setup_env.py választja ki a gép alapján.
 openai-whisper
 
 # YouTube
