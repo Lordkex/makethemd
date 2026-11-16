@@ -22,7 +22,7 @@ ACCEPTED_FILE_EXTENSIONS = [
 
 class AudioConverter(DocumentConverter):
     """
-    Converts audio files to markdown via extraction of metadata (if `exiftool` is installed), and speech transcription (if `speech_recognition` is installed).
+    Converts audio files to markdown via extraction of metadata (if `exiftool` is installed), and speech transcription with Whisper (requires `openai-whisper` and `torch`).
     """
 
     def accepts(

@@ -22,7 +22,7 @@ _model_cache: dict = {}
 
 # tqdm sor formátuma: "10%|█░░| 1838/18868 [01:40<11:43, 242.07frames/s]"
 _TQDM_RE = re.compile(
-    r"(\d+)%.*?(\d+)/(\d+)\s*\[(\d+:\d+)<([\d:]+),\s*([\d.]+)\s*(?:frames)?/?(?:s|it/s)"
+    r"(\d+)%.*?(\d+)/(\d+)\s*\[([\d:]+)<([\d:]+),\s*([\d.]+)\s*(?:frames)?/?(?:s|it/s)"
 )
 
 
@@ -57,6 +57,11 @@ class _StderrInterceptor:
 def _get_model(model_size: str, device: str):
     key = (model_size, device)
     if key not in _model_cache:
+        # Only one model stays loaded: switching turbo -> large would otherwise keep both
+        # in VRAM and end in CUDA out-of-memory.
+        _model_cache.clear()
+        if device == "cuda":
+            torch.cuda.empty_cache()
         _model_cache[key] = whisper.load_model(model_size, device=device)
     return _model_cache[key]
 

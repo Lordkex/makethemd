@@ -1,3 +1,4 @@
+from html import escape as html_escape
 import bs4
 import json
 import re
@@ -7,6 +8,7 @@ from urllib.parse import unquote
 
 from .._base_converter import DocumentConverter, DocumentConverterResult
 from .._stream_info import StreamInfo
+from ._url_utils import host_matches
 
 
 ACCEPTED_MIME_TYPE_PREFIXES = ["text/html", "application/xhtml"]
@@ -22,7 +24,7 @@ class FacebookConverter(DocumentConverter):
         extension = (stream_info.extension or "").lower()
 
         url = unquote(url)
-        if "facebook.com" not in url and "fb.watch" not in url:
+        if not host_matches(url, ("facebook.com", "fb.watch")):
             return False
 
         if extension in ACCEPTED_FILE_EXTENSIONS:
@@ -141,7 +143,7 @@ class FacebookConverter(DocumentConverter):
             md += f"- **Author:** {author}\n"
         if video_url:
             md += f"- **Video:** {video_url}\n\n"
-            md += f"<video controls src=\"{video_url}\"></video>\n\n"
+            md += f"<video controls src=\"{html_escape(video_url, quote=True)}\"></video>\n\n"
         if description:
             md += f"### Description\n{description}\n"
         if transcript:

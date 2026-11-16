@@ -13,6 +13,8 @@ from i18n import t
 
 FDOWN_API = "https://fdown.tools/api/api/video-info"
 FDOWN_PROXY = "https://fdown.tools/api/api/proxy-download"
+# A harmadik féltől kapott URL-ről letöltött fájl felső korlátja (a lemez megtelése ellen).
+MAX_DOWNLOAD_BYTES = 2 * 1024 ** 3
 
 
 def is_facebook_url(url: str) -> bool:
@@ -114,8 +116,15 @@ def download_facebook_audio(
                         content_type = response.headers.get("Content-Type", "").lower()
                         if any(value in content_type for value in ("text/", "json", "xml")):
                             raise RuntimeError(t("err_fdown_text"))
+                        declared = int(response.headers.get("Content-Length") or 0)
+                        if declared > MAX_DOWNLOAD_BYTES:
+                            raise RuntimeError(t("err_fdown_too_large"))
+                        written = 0
                         with source.open("wb") as stream:
                             for chunk in response.iter_content(chunk_size=256 * 1024):
+                                written += len(chunk)
+                                if written > MAX_DOWNLOAD_BYTES:
+                                    raise RuntimeError(t("err_fdown_too_large"))
                                 stream.write(chunk)
                     if progress_fn:
                         progress_fn(t("fdown_converting"))

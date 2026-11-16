@@ -1,9 +1,11 @@
+from html import escape as html_escape
 import bs4
 from typing import Any, BinaryIO, Dict
 from urllib.parse import unquote
 
 from .._base_converter import DocumentConverter, DocumentConverterResult
 from .._stream_info import StreamInfo
+from ._url_utils import host_matches
 
 
 ACCEPTED_MIME_TYPE_PREFIXES = ["text/html", "application/xhtml"]
@@ -19,7 +21,7 @@ class LinkedInConverter(DocumentConverter):
         extension = (stream_info.extension or "").lower()
 
         url = unquote(url)
-        if "linkedin.com" not in url:
+        if not host_matches(url, ("linkedin.com",)):
             return False
 
         if extension in ACCEPTED_FILE_EXTENSIONS:
@@ -60,7 +62,7 @@ class LinkedInConverter(DocumentConverter):
         if media:
             md += f"- **Media:** {media}\n\n"
             if media.endswith(('.mp4', '.mov')):
-                md += f"<video controls src=\"{media}\"></video>\n\n"
+                md += f"<video controls src=\"{html_escape(media, quote=True)}\"></video>\n\n"
             else:
                 md += f"![media]({media})\n\n"
         if description:

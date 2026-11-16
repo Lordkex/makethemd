@@ -10,18 +10,21 @@ import tkinter as tk
 from tkinter import filedialog
 from pathlib import Path
 from urllib.parse import urlparse
-import importlib
 
 local_appdata = os.environ.get("LOCALAPPDATA", "")
 FFMPEG_BIN = str(
     Path(local_appdata) / "Microsoft" / "WinGet" / "Packages" /
     "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe" / "ffmpeg-8.1.1-full_build" / "bin"
 )
-if FFMPEG_BIN not in os.environ["PATH"]:
-    os.environ["PATH"] = FFMPEG_BIN + os.pathsep + os.environ["PATH"]
+# Csak létező, abszolút mappát teszünk a PATH elejére: LOCALAPPDATA nélkül a fenti út
+# relatív lenne, és a PATH-ba került relatív mappa az aktuális könyvtárból futtatna programot.
+_path_entries = os.environ.get("PATH", "").split(os.pathsep)
+if local_appdata and Path(FFMPEG_BIN).is_dir() and FFMPEG_BIN not in _path_entries:
+    os.environ["PATH"] = os.pathsep.join([FFMPEG_BIN, *filter(None, _path_entries)])
 
 import flet as ft
 from markitdown import MarkItDown
+from markitdown.converters._url_utils import youtube_video_id
 from markitdown.converters._youtube_converter import IS_YOUTUBE_TRANSCRIPT_CAPABLE
 from facebook_audio import convert_to_mp3, download_facebook_audio, is_facebook_url
 from i18n import LANGUAGES, get_language, set_language, t, tn
@@ -59,7 +62,7 @@ def filetypes() -> list[tuple[str, str]]:
                                 "*.csv *.json *.xml *.epub *.ipynb *.msg "
                                 "*.azw3 *.mobi *.fb2 "
                                 "*.png *.jpg *.jpeg *.gif *.bmp *.webp "
-                                "*.mp3 *.wav *.m4a *.zip"),
+                                "*.mp3 *.wav *.m4a *.mp4 *.zip"),
         ("PDF", "*.pdf"),
         ("Word", "*.docx *.doc"),
         ("Excel", "*.xlsx *.xls"),
@@ -67,7 +70,8 @@ def filetypes() -> list[tuple[str, str]]:
         (t("ft_ebook"), "*.azw3 *.mobi *.fb2"),
     ]
 
-AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a"}
+# Whisperrel átírt fájlok (az .mp4 hangsávját is a markitdown AudioConverter-e kezeli)
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".mp4"}
 
 
 def open_file_dialog() -> list[Path]:
@@ -138,15 +142,18 @@ YT_DLP_SITES = (
 )
 
 
+def _host_matches(host: str, domains: tuple[str, ...]) -> bool:
+    """A host maga a domain vagy annak aldomainje (pl. m.youtube.com)."""
+    return any(host == domain or host.endswith("." + domain) for domain in domains)
+
+
 def is_media_site(url: str) -> bool:
-    host = (urlparse(url).hostname or "").lower()
-    return any(host == site or host.endswith("." + site) for site in YT_DLP_SITES)
+    return _host_matches((urlparse(url).hostname or "").lower(), YT_DLP_SITES)
 
 
 def has_caption_track(url: str) -> bool:
     """Az Instagram nem ad ki feliratsávot, ott a felirat-lekérés csak egy felesleges kérés."""
-    host = (urlparse(url).hostname or "").lower()
-    return not (host == "instagram.com" or host.endswith(".instagram.com"))
+    return not _host_matches((urlparse(url).hostname or "").lower(), ("instagram.com",))
 
 
 def screen_work_area() -> tuple[int, int, int, int] | None:
@@ -193,9 +200,13 @@ def output_has_transcript(path: Path) -> bool:
         return False
 
 
+YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
+
+
 def is_youtube_url(url: str) -> bool:
-    host = urlparse(url).netloc.lower()
-    return "youtube.com" in host or "youtu.be" in host
+    # pontos domain-egyezés (mint az is_media_site-nál): a "notyoutube.com" vagy
+    # "youtube.com.example.org" nem számít YouTube-nak
+    return _host_matches((urlparse(url).hostname or "").lower(), YOUTUBE_HOSTS)
 
 
 class TranscriptMissingError(RuntimeError):
@@ -321,23 +332,33 @@ def ensure_real_transcript(url: str, text: str) -> None:
     raise TranscriptMissingError(t("err_captions_blocked"), candidate, blocked=True)
 
 
+def _safe_name_part(value: str, limit: int) -> str:
+    """Fájlnévben biztonságos rész: csak [A-Za-z0-9._-], pont-sorozat (`..`) nélkül.
+
+    Az URL-ből jövő szöveg nem tartalmazhat útvonal-elválasztót (`/`, `\\`), meghajtó-
+    vagy ADS-jelölőt (`:`) és `..`-t, különben a kimeneti mappán kívülre írnánk.
+    """
+    value = re.sub(r"[^A-Za-z0-9._-]+", "_", value)
+    value = re.sub(r"\.{2,}", "_", value).strip("._")
+    return value[:limit]
+
+
 def url_to_basename(url: str) -> str:
     """Stabil, sorszám nélküli alapnevet képez egy URL-ből (kiterjesztés nélkül).
 
     Ugyanaz az URL mindig ugyanazt adja, így újrafuttatáskor felismerhető a kész fájl.
+    Az eredmény mindig egyetlen, biztonságos fájlnév-komponens.
     """
     parsed = urlparse(url)
-    host = parsed.netloc.lower()
-    if "youtube.com" in host or "youtu.be" in host:
-        if "v=" in url:
-            return "youtube_" + url.split("v=")[-1].split("&")[0][:16]
-        return "youtube_" + parsed.path.strip("/").split("/")[-1][:16]
-    if "tiktok.com" in host:
+    host = (parsed.hostname or "").lower()
+    if is_youtube_url(url):
+        # ugyanaz az ID watch?v=, youtu.be/, /shorts/ és /live/ alakból (a konverterrel közös logika)
+        video_id = youtube_video_id(url) or parsed.path.strip("/").split("/")[-1]
+        return "youtube_" + (_safe_name_part(video_id, 16) or "video")
+    if _host_matches(host, ("tiktok.com",)):
         m = re.search(r"/video/(\d+)", parsed.path)
-        return "tiktok_" + (m.group(1) if m else parsed.path.strip("/")[:24])
-    base = (host + parsed.path).strip("/")
-    base = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("_")
-    return base[:80] or "link"
+        return "tiktok_" + (m.group(1) if m else _safe_name_part(parsed.path, 24) or "video")
+    return _safe_name_part(host + parsed.path, 80) or "link"
 
 
 def parse_link_list(text: str) -> list[str]:
@@ -555,7 +576,7 @@ def fetch_media_captions(url: str, lang: str | None) -> str | None:
     Bármilyen hiba esetén None (a Whisper-tartalék úgyis lefut).
     """
     try:
-        if "tiktok.com" in urlparse(url).netloc.lower():
+        if _host_matches((urlparse(url).hostname or "").lower(), ("tiktok.com",)):
             return _tiktok_caption_text(url, lang)
         return _generic_captions(url, lang)
     except Exception:
@@ -816,8 +837,6 @@ def main(page: ft.Page, restore: dict | None = None):
         on_click=load_failed_links,
     )
     refresh_retry_button()
-
-    AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".mp4"}
 
     tags_row = ft.Row(wrap=True, spacing=6, run_spacing=6)
     files_tags_container = ft.Container(
@@ -1186,6 +1205,16 @@ def main(page: ft.Page, restore: dict | None = None):
         model = model_dd.value or "turbo"
 
         def run():
+            try:
+                run_batch()
+            except Exception as ex:
+                # pl. nem írható kimeneti mappa: a hiba látszódjon, és a Konvertálás gomb
+                # ne ragadjon be (a spinner.visible tiltja az újabb indítást)
+                log(t("log_unexpected_error", error=ex), RED)
+                spinner.visible = False
+                safe_update()
+
+        def run_batch():
             converted = 0
             errors = 0
             use_ocr = bool(ocr_checkbox.value)
@@ -1458,7 +1487,7 @@ def main(page: ft.Page, restore: dict | None = None):
         (ft.Icons.MENU_BOOK_OUTLINED, t("fmt_ebooks"), "EPUB, AZW3, MOBI, FB2"),
         (ft.Icons.DATA_OBJECT, t("fmt_notebooks"), "IPYNB, JSON"),
         (ft.Icons.IMAGE_OUTLINED, t("fmt_images"), "PNG, JPG, JPEG, GIF, BMP, WEBP"),
-        (ft.Icons.AUDIO_FILE_OUTLINED, t("fmt_audio"), "MP3, WAV, M4A"),
+        (ft.Icons.AUDIO_FILE_OUTLINED, t("fmt_audio"), "MP3, WAV, M4A, MP4"),
         (ft.Icons.MAIL_OUTLINE, t("fmt_outlook"), "MSG"),
         (ft.Icons.FOLDER_ZIP_OUTLINED, t("fmt_archives"), "ZIP"),
     ]

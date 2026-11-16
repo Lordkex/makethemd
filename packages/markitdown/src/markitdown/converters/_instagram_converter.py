@@ -1,9 +1,11 @@
+from html import escape as html_escape
 import bs4
 from typing import Any, BinaryIO, Dict, Union
 from urllib.parse import unquote
 
 from .._base_converter import DocumentConverter, DocumentConverterResult
 from .._stream_info import StreamInfo
+from ._url_utils import host_matches
 
 
 ACCEPTED_MIME_TYPE_PREFIXES = ["text/html", "application/xhtml"]
@@ -20,7 +22,7 @@ class InstagramConverter(DocumentConverter):
 
         url = unquote(url)
 
-        if "instagram.com" not in url and "instagr.am" not in url:
+        if not host_matches(url, ("instagram.com", "instagr.am")):
             return False
 
         if extension in ACCEPTED_FILE_EXTENSIONS:
@@ -62,7 +64,7 @@ class InstagramConverter(DocumentConverter):
         if media:
             md += f"- **Media:** {media}\n\n"
             if media.endswith(('.mp4', '.mov')):
-                md += f"<video controls src=\"{media}\"></video>\n\n"
+                md += f"<video controls src=\"{html_escape(media, quote=True)}\"></video>\n\n"
             else:
                 md += f"![instagram media]({media})\n\n"
         if description:
