@@ -43,8 +43,7 @@ all = [
   "pdfminer.six>=20251230",
   "pdfplumber>=0.11.9",
   "olefile",
-  "pydub",
-  "SpeechRecognition",
+  "openai-whisper",
   "youtube-transcript-api~=1.2.0",
   "azure-ai-documentintelligence",
   "azure-ai-contentunderstanding>=1.2.0b1",
@@ -56,8 +55,9 @@ xlsx = ["pandas", "openpyxl"]
 xls = ["pandas", "xlrd"]
 pdf = ["pdfminer.six>=20251230", "pdfplumber>=0.11.9"]
 outlook = ["olefile"]
-audio-transcription = ["pydub", "SpeechRecognition"]
-youtube-transcription = ["youtube-transcript-api"]
+# the transcriber imports whisper (+ torch); setup_env.py picks the CUDA or CPU torch build
+audio-transcription = ["openai-whisper"]
+youtube-transcription = ["youtube-transcript-api~=1.2.0"]  # RequestBlocked needs 1.x
 az-doc-intel = ["azure-ai-documentintelligence", "azure-identity"]
 # >=1.2.0b1 required for to_llm_input() helper used by ContentUnderstandingConverter
 az-content-understanding = ["azure-ai-contentunderstanding>=1.2.0b1", "azure-identity"]

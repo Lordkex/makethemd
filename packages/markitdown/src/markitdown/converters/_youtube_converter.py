@@ -3,10 +3,11 @@ import time
 import re
 import bs4
 from typing import Any, BinaryIO, Dict, List, Union
-from urllib.parse import parse_qs, urlparse, unquote
+from urllib.parse import unquote
 
 from .._base_converter import DocumentConverter, DocumentConverterResult
 from .._stream_info import StreamInfo
+from ._url_utils import youtube_video_id
 
 # Optional YouTube transcription support
 try:
@@ -56,8 +57,11 @@ class YouTubeConverter(DocumentConverter):
         url = unquote(url)
         url = url.replace(r"\?", "?").replace(r"\=", "=")
 
-        if not url.startswith("https://www.youtube.com/watch?"):
-            # Not a YouTube URL
+        # youtu.be, m.youtube.com, /shorts/, /live/ and http:// links are YouTube videos too;
+        # otherwise they fall through to the HTML converter and the app misreads the missing
+        # transcript as an IP block.
+        if youtube_video_id(url) is None:
+            # Not a YouTube video URL
             return False
 
         if extension in ACCEPTED_FILE_EXTENSIONS:
@@ -150,10 +154,8 @@ class YouTubeConverter(DocumentConverter):
         if IS_YOUTUBE_TRANSCRIPT_CAPABLE:
             ytt_api = YouTubeTranscriptApi()
             transcript_text = ""
-            parsed_url = urlparse(stream_info.url)  # type: ignore
-            params = parse_qs(parsed_url.query)  # type: ignore
-            if "v" in params and params["v"][0]:
-                video_id = str(params["v"][0])
+            video_id = youtube_video_id(unquote(stream_info.url or ""))
+            if video_id:
                 transcript_list = ytt_api.list(video_id)
                 languages = ["en"]
                 for transcript in transcript_list:

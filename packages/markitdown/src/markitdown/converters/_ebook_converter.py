@@ -10,6 +10,8 @@ from .._exceptions import MissingDependencyException
 from .._stream_info import StreamInfo
 from ._epub_converter import EpubConverter
 
+EBOOK_CONVERT_TIMEOUT_S = 600
+
 ACCEPTED_MIME_TYPE_PREFIXES = [
     "application/x-mobipocket-ebook",
     "application/x-fictionbook+xml",
@@ -98,8 +100,16 @@ class EbookConverter(DocumentConverter):
                 completed = subprocess.run(
                     [ebook_convert_path, source_path, output_path],
                     capture_output=True,
-                    text=True,
+                    # Calibre writes UTF-8; the Windows locale codec would fail on e.g. Hungarian titles
+                    encoding="utf-8",
+                    errors="replace",
+                    # a malformed file must not block the worker thread forever
+                    timeout=EBOOK_CONVERT_TIMEOUT_S,
                 )
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError(
+                    f"ebook-convert did not finish within {EBOOK_CONVERT_TIMEOUT_S} seconds."
+                ) from exc
             except FileNotFoundError as exc:
                 raise MissingDependencyException(
                     "Ebook conversion requires Calibre's `ebook-convert` executable. "

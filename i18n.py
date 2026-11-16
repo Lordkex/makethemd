@@ -108,6 +108,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "reason_deferred": "elhalasztva: a YouTube ebben a futásban letiltotta a felirat-kéréseket",
         "log_deferred": "(YouTube-tiltás miatt elhalasztva)",
         "log_nothing_selected": "Nincs kiválasztott fájl vagy URL.",
+        "log_unexpected_error": "Váratlan hiba, a feldolgozás leállt: {error}",
         "log_summary": "Kész: {ok} sikeres, {errors} hiba{deferred}{skipped}  →  {folder}",
         "log_summary_deferred": ", {n} elhalasztva",
         "log_summary_skipped": ", {n} kihagyva",
@@ -172,6 +173,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "err_fdown_no_formats": "A FDOWN válaszából hiányoznak a letöltési formátumok.",
         "err_fdown_no_audio": "A FDOWN nem adott letölthető hangsávot; a videó lehet privát vagy törölt.",
         "err_fdown_text": "A letöltő médiafájl helyett szöveges választ adott.",
+        "err_fdown_too_large": "A letöltendő fájl túl nagy (2 GB fölött), a letöltés megszakadt.",
         "err_fdown_all_failed": "A Facebook-hang letöltése a FDOWN szolgáltatóval sem sikerült: {error}",
 
         # OCR
@@ -329,6 +331,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "reason_deferred": "deferred: YouTube blocked caption requests during this run",
         "log_deferred": "(deferred because of a YouTube block)",
         "log_nothing_selected": "No files or URLs selected.",
+        "log_unexpected_error": "Unexpected error, processing stopped: {error}",
         "log_summary": "Done: {ok} succeeded, {errors} failed{deferred}{skipped}  →  {folder}",
         "log_summary_deferred": ", {n} deferred",
         "log_summary_skipped": ", {n} skipped",
@@ -397,6 +400,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "err_fdown_no_formats": "The FDOWN response contains no download formats.",
         "err_fdown_no_audio": "FDOWN returned no downloadable audio; the video may be private or deleted.",
         "err_fdown_text": "The downloader returned a text response instead of a media file.",
+        "err_fdown_too_large": "The file is too large (over 2 GB); the download was stopped.",
         "err_fdown_all_failed": "Downloading the Facebook audio via FDOWN failed as well: {error}",
 
         "err_ocr_env": "The project .venv is incomplete: {path}. Repair or recreate the project environment.",

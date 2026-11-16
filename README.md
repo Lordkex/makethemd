@@ -46,7 +46,7 @@ By default the results go into the **`output/`** folder.
 
 | Tool | Needed for | Install |
 |---|---|---|
-| **Python 3.10–3.14** | the app itself | [python.org](https://www.python.org/downloads/) (tick “Add to PATH”) |
+| **Python 3.10–3.13** (3.12 recommended) | the app itself | [python.org](https://www.python.org/downloads/) (tick “Add to PATH”) |
 | **ffmpeg** | audio and video processing | `winget install Gyan.FFmpeg` |
 | **Node.js** or **Deno** | YouTube downloads with yt-dlp (without one you may get `HTTP 403`) | `winget install OpenJS.NodeJS` |
 | **Calibre** (`ebook-convert`) | AZW3/MOBI/FB2/DjVu conversion | `winget install calibre` |

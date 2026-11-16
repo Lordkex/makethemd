@@ -18,6 +18,7 @@ import codecs
 
 from ._stream_info import StreamInfo
 from ._uri_utils import parse_data_uri, file_uri_to_path
+from .converters._url_utils import host_matches
 
 from .converters import (
     PlainTextConverter,
@@ -487,7 +488,7 @@ class MarkItDown:
         # HTTP/HTTPS URIs
         elif uri.startswith("http:") or uri.startswith("https:"):
             request_headers = None
-            if "facebook.com" in uri or "fb.watch" in uri:
+            if host_matches(uri, ("facebook.com", "fb.watch")):
                 request_headers = {
                     "Referer": "https://www.facebook.com/",
                     "Sec-Fetch-Dest": "document",
@@ -495,7 +496,10 @@ class MarkItDown:
                     "Sec-Fetch-Site": "same-origin",
                     "Sec-Fetch-User": "?1",
                 }
-            response = self._requests_session.get(uri, stream=True, headers=request_headers)
+            # (connect, read) timeout: a stalled server must not hang the conversion thread forever
+            response = self._requests_session.get(
+                uri, stream=True, headers=request_headers, timeout=(15, 60)
+            )
             response.raise_for_status()
             return self.convert_response(
                 response,

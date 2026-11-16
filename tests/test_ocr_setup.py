@@ -170,7 +170,7 @@ class OCRSetupTests(unittest.TestCase):
         self.venv.rmdir()
 
         def create(command, progress):
-            self.assertEqual(command[1:], ["-m", "venv", "--system-site-packages", str(self.venv)])
+            self.assertEqual(command[1:], ["-m", "venv", str(self.venv)])
             self.python.parent.mkdir(parents=True)
             self.python.touch()
 

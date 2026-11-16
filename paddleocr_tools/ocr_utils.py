@@ -136,8 +136,10 @@ def ensure_ocr_environment(progress: Callable[[str], None] | None = None) -> Non
                 raise RuntimeError(t("err_ocr_env", path=OCR_PYTHON))
             if progress:
                 progress(t("log_ocr_create_env"))
-            # Preserve access to an app installed in the system Python on older setups.
-            _install([sys.executable, "-m", "venv", "--system-site-packages", str(PROJECT_VENV)], progress)
+            # Isolated like setup_env.ensure_venv: setup_env later reuses this .venv for the whole
+            # app, and a global CPU torch visible through system site-packages would mask the GPU
+            # build. requirements-ocr.txt brings everything the worker needs.
+            _install([sys.executable, "-m", "venv", str(PROJECT_VENV)], progress)
         check_ocr_environment()
         if progress:
             progress(t("log_ocr_check"))

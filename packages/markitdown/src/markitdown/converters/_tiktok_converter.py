@@ -1,3 +1,4 @@
+from html import escape as html_escape
 import bs4
 import json
 import requests
@@ -6,6 +7,7 @@ from urllib.parse import unquote
 
 from .._base_converter import DocumentConverter, DocumentConverterResult
 from .._stream_info import StreamInfo
+from ._url_utils import host_matches
 
 
 ACCEPTED_MIME_TYPE_PREFIXES = ["text/html", "application/xhtml"]
@@ -21,7 +23,7 @@ class TikTokConverter(DocumentConverter):
         extension = (stream_info.extension or "").lower()
 
         url = unquote(url)
-        if "tiktok.com" not in url and not url.startswith("https://vm.tiktok.com"):
+        if not host_matches(url, ("tiktok.com",)):
             return False
 
         if extension in ACCEPTED_FILE_EXTENSIONS:
@@ -122,6 +124,10 @@ class TikTokConverter(DocumentConverter):
 
         tiktok_json = self._extract_tiktok_json(soup)
         transcript = None
+        # defaults: the JSON can parse while itemStruct is missing (bot check, deleted video)
+        music_title = ""
+        music_author = ""
+        stats: Dict[str, Any] = {}
         if tiktok_json:
             item_struct = (
                 tiktok_json.get("__DEFAULT_SCOPE__", {})
@@ -153,10 +159,6 @@ class TikTokConverter(DocumentConverter):
                 if title == "TikTok video":
                     author_title = author_info.get("nickname") or author_info.get("uniqueId")
                     title = f"{author_title} on TikTok" if author_title else title
-        else:
-            music_title = ""
-            music_author = ""
-            stats = {}
 
         md = "# TikTok\n\n"
         if title:
@@ -165,7 +167,7 @@ class TikTokConverter(DocumentConverter):
             md += f"- **Author:** {author}\n"
         if video_url:
             md += f"- **Video:** {video_url}\n"
-            md += f"<video controls src=\"{video_url}\"></video>\n\n"
+            md += f"<video controls src=\"{html_escape(video_url, quote=True)}\"></video>\n\n"
         if music_title:
             md += f"- **Music:** {music_title}"
             if music_author:
