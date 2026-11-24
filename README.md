@@ -1,4 +1,5 @@
-# MakeThemd
+# MakeThemd 
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/Lordkex/badge.svg)](https://hub.xerj.org/contributors/Lordkex)
 
 A Windows desktop app that **turns files and links into Markdown (`.md`)**, from documents and
 e-books to audio files, YouTube videos and social media clips.
@@ -198,7 +199,6 @@ Test:
 ```powershell
 python -m unittest discover tests
 ```
-
 ---
 
 ## Origin and credits
